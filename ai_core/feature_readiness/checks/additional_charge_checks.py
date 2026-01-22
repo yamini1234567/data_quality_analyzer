@@ -30,7 +30,7 @@ class AdditionalChargeReadinessCheck(BaseFeatureReadinessCheck):
     def __init__(
         self,
         mongo_client: AsyncIOMotorClient,
-        database_name: str = "Data_Quality_Analyzer",
+        database_name: str = "rcm_test_db",
         collection_name: str = "claims"
     ):
         super().__init__()

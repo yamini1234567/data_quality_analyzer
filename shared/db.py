@@ -16,7 +16,7 @@ def get_mongo_uri() -> str:
 
 
 def get_database_name() -> str:
-    return os.getenv("MONGODB_DB_NAME", "Data_Quality_Analyzer")
+    return os.getenv("MONGODB_DB_NAME", "rcm_test_db")
 
 
 def get_mongo_client() -> AsyncIOMotorClient:
