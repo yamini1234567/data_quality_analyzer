@@ -6,17 +6,17 @@ import config
 from ai_core.feature_readiness.checks.additional_charge_checks import AdditionalChargeReadinessCheck
 from ai_core.feature_readiness.checks.charge_analysis_checks import ChargeAnalysisReadinessCheck
 from ai_core.feature_readiness.base_standalone import CheckStatus
-from ai_core.data_quality.claim_analysis import claims_analysis
+from ai_core.data_quality.claims_analysis import claims_analysis
 from ai_core.data_quality.payer_analysis import payer_analysis
 from ai_core.data_quality.chargespattern_analysis import charges_analysis
-from ai_core.data_quality.claimadjustments_analysis import adjustment_analysis
+from ai_core.data_quality.claimsadjustments_analysis import adjustment_analysis
 from ai_core.data_quality.cpt_code_analysis import cpt_analysis
-from ai_core.data_quality.models import DataQualityResult, Overview
+from ai_core.data_quality.models import DataQualityResult, Overview 
 from ai_core.data_quality.diagnosis_analysis import diagnosis_analysis
- 
+
 async def run_data_quality(db):
     logger.info("Data Quality Analysis")
-   
+    
     payer_data = await payer_analysis(db)
     charges_data = await charges_analysis(db)
     claims_data = await claims_analysis(db)
@@ -43,12 +43,12 @@ async def run_data_quality(db):
         adjustment=claims_adjustment_data,
         diagnosis=diagnosis_data
     )
-   
+    
     logger.info("Saving combined result")
     collection = db["data_quality_results"]
     result_dict = combined_result.model_dump()
     await collection.insert_one(result_dict)
-   
+    
     logger.success(" Data quality complete!")
     logger.info(f"Saved to database collection data quality results")
     logger.info(f"Document ID: {result_dict.get('_id')}")
@@ -75,7 +75,7 @@ async def run_checks(client):
     logger.info(f"\nChecks complete: {score:.1f}% ({passed}/{total})")
  
 async def main():
- 
+
     logger.info("DATA QUALITY ANALYZER")
    
     logger.info("\nConnecting...")
@@ -90,6 +90,5 @@ async def main():
    
     await close_db(client)
  
- 
+
 asyncio.run(main())
- 

@@ -104,7 +104,7 @@ class PayerAnalyzer(BaseAnalyzer):
    
    # Bottom 10 payers with least claims
    
-    def bottom_10_payers(self, bottom_payers):  
+    def bottom_10_payers(self, bottom_payers):   
         logger.info("Payers with least claims")
         for i in range(len(bottom_payers)):
             payer = bottom_payers[i]
@@ -173,5 +173,4 @@ class PayerAnalyzer(BaseAnalyzer):
 async def payer_analysis(db):
     analyzer = PayerAnalyzer(db)
     return await analyzer.run_all()
- 
  

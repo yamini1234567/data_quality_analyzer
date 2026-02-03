@@ -43,29 +43,25 @@ async def test_connection(client: AsyncIOMotorClient) -> bool:
 
 
 async def init_db():
-    logger.info("=" * 70)
     logger.info("DATABASE INITIALIZATION")
-    logger.info("=" * 70)
     
-    logger.info("Step 1: Creating MongoDB client...")
+    logger.info(" Creating MongoDB client")
     client = get_mongo_client()
     
-    logger.info("Step 2: Testing connection...")
+    logger.info("Testing connection")
     if not await test_connection(client):
         raise Exception("Failed to connect to MongoDB")
     
-    logger.info("Step 3: Getting database...")
+    logger.info("Getting database...")
     db = get_database(client, "rcm_test_db")
     
-    logger.info("Step 4: Initializing Beanie models")
+    logger.info("Initializing Beanie models")
     from ai_core.feature_readiness.appsettings import MAppSettings
     await init_beanie(database=db, document_models=[MAppSettings])
     
     logger.info(f"Database initialized: {db.name}")
     logger.info(f"Initialized 1 model(s):")
-    logger.info("  - MAppSettings")
-    logger.info("=" * 70 + "\n")
-    
+    logger.info(" MAppSettings")
     return client, db
 
 

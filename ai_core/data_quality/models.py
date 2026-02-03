@@ -100,7 +100,12 @@ class ClaimIssues(BaseModel):
     claim_sum_mismatch: DataCount
     duplicate_claims: DataCount
     paid_plus_adjustment_exceeds_claim:DataCount
-   
+    closed_with_zero_amtpaid_and_adj:DataCount
+    claim_amount_paid_sum_mismatch:DataCount
+    claim_adj_amount_sum_mismatch:DataCount
+    closed_with_remaining_balanceamt:DataCount
+    
+    
  
 class Claims_info(BaseModel):
     total_claims: int
@@ -114,8 +119,6 @@ class Claims_info(BaseModel):
     denied_amount: float
     issues: ClaimIssues
  
- 
-
 class Adjustment(BaseModel):  
     total_claims: int
     claims_with_adjustments: int
@@ -126,6 +129,8 @@ class Adjustment(BaseModel):
     charge_negative_adjustments: DataCount
     charge_adjustment_exceeds_amount: DataCount
     charges_missing_adjustment_details: DataCount
+    chargeadjustment_sum_mismatch: DataCount
+    claim_adj_records_sum_mismatch: DataCount
  
 class DataQualityResult(BaseModel):
     timestamp: datetime
@@ -137,4 +142,3 @@ class DataQualityResult(BaseModel):
     cpt: Optional[CPT] = None
     claims: Optional[Claims_info] = None
     adjustment: Optional[Adjustment] = None
- 
