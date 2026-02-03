@@ -1,116 +1,102 @@
  
 from loguru import logger
-from .models import DataCount,Claims_info,ClaimIssues
+from .models import DataCount, Claims_info, ClaimIssues
  
-async def claims_analysis(db):
- 
-    logger.info("Claim Status Analysis")
- 
-    claims = db["claims"]
-    total_claims = await claims.count_documents({})
+class ClaimsAnalyzer:  
+    def __init__(self, db):
+        self.db = db
+        self.claims = db["claims"]
+        self.total_claims = 0
+        self.open_count = 0
+        self.sent_to_payer_count = 0
+        self.closed_count = 0
+        self.denied_count = 0
+        self.pending_count = 0
+        self.pending_amount = 0
+        self.denial_rate = 0
+        self.denied_amount = 0
    
-    logger.info("Counts of different claim statuses")
+  # To get the count of the different claim status's
    
-    open_count = await claims.count_documents({"claimStatus": "Open"})
-    sent_to_payer_count = await claims.count_documents({"claimStatus": "Sent to Payor"})
-    closed_count = await claims.count_documents({"claimStatus": "Closed"})
-    denied_count = await claims.count_documents({"claimStatus": "Denied"})
+    async def get_claim_status_counts(self):
+        logger.info("\nCounting claim statuses")
+        self.total_claims = await self.claims.count_documents({})
+        self.open_count = await self.claims.count_documents({"claimStatus": "Open"})
+        self.sent_to_payer_count = await self.claims.count_documents({"claimStatus": "Sent to Payor"})
+        self.closed_count = await self.claims.count_documents({"claimStatus": "Closed"})
+        self.denied_count = await self.claims.count_documents({"claimStatus": "Denied"})
+        logger.info(f"Total Claims: {self.total_claims:,}")
+        logger.info(f"Open: {self.open_count:,}")
+        logger.info(f"Sent to Payer: {self.sent_to_payer_count:,}")
+        logger.info(f"Closed: {self.closed_count:,}")
+        logger.info(f"Denied: {self.denied_count:,}")
    
-    logger.info(f"\nTotal Claims:{total_claims:8,}")
-    logger.info(f"\nOpen:{open_count:8,}")
-    logger.info(f"Sent to Payer:{sent_to_payer_count:8,}")
-    logger.info(f"Closed:{closed_count:8,}")
-    logger.info(f"Denied:{denied_count:8,}")
+    # To get the pending payment information
    
-    # Pending Payment
+    async def get_pending_payment_info(self):
+        logger.info("Pending Payment (Open + Sent to Payer)")
+       
+        self.pending_count = self.open_count + self.sent_to_payer_count
+       
+        pipeline = [
+            {"$match": {"claimStatus": {"$in": ["Open", "Sent to Payor"]}}},
+            {"$group": {"_id": None, "total_amount": {"$sum": "$claimAmount"}}}
+        ]    
+        result = await self.claims.aggregate(pipeline).to_list(1)
+        self.pending_amount = result[0]["total_amount"] if result else 0
+        logger.info(f"Pending Count: {self.pending_count:,} claims")
+        logger.info(f"Pending Amount: ${self.pending_amount:,.2f}")
    
-    logger.info("Pending Payment (Open + Sent to Payer)")
+   #To get the denial information
    
-    pending_count = open_count + sent_to_payer_count
-    pending_pipeline = [
-        {
-            "$match": {
-                "claimStatus": {"$in": ["Open", "Sent to Payor"]}
-            }
-        },
-        {
-            "$group": {
-                "_id": None,
-                "total_amount": {"$sum": "$claimAmount"}
-            }
-        }
-    ]
+    async def get_denial_info(self):
+        logger.info("Denial Rate")
+        self.denial_rate = (self.denied_count / self.total_claims * 100) if self.total_claims > 0 else 0
+       
+        pipeline = [
+            {"$match": {"claimStatus": "Denied"}},
+            {"$group": {"_id": None, "total_amount": {"$sum": "$claimAmount"}}}
+        ]
+       
+        result = await self.claims.aggregate(pipeline).to_list(1)
+        self.denied_amount = result[0]["total_amount"] if result else 0
+       
+        logger.info(f"Denied Count: {self.denied_count:,} claims")
+        logger.info(f"Denial Rate: {self.denial_rate:.2f}%")
+        logger.info(f"Denied Amount: ${self.denied_amount:,.2f}")
    
-    pending_result = await claims.aggregate(pending_pipeline).to_list(1)
-    pending_amount = pending_result[0]["total_amount"] if pending_result else 0
+    #  To find the denied claims with payment and also incorrectly paid amount
    
-    logger.info(f"\nPending Count: {pending_count:8,} claims")
-    logger.info(f"Pending Amount:${pending_amount:,.2f}")
-   
-    # DENIAL RATE
-   
-    logger.info("Denial Rate")
-   
-    denial_rate = (denied_count / total_claims * 100) if total_claims > 0 else 0
-    denied_pipeline = [
-        {
-            "$match": {
-                "claimStatus": "Denied"
-            }
-        },
-        {
-            "$group": {
-                "_id": None,
-                "total_amount": {"$sum": "$claimAmount"}
-            }
-        }
-    ]
-   
-    denied_result = await claims.aggregate(denied_pipeline).to_list(1)
-    denied_amount = denied_result[0]["total_amount"] if denied_result else 0
-   
-    logger.info(f"\nDenied Count:{denied_count:8,} claims")
-    logger.info(f"Denial Rate:{denial_rate:8.2f}%")
-    logger.info(f"Denied Amount:${denied_amount:,.2f}")
-     
-      # Checking the denied claims with Payment
-   
-    if denied_count==0:
-        logger.info("No denied claims")
-        denied_with_payment_count = 0
-        denied_with_payment_percentage = 0
-        denied_without_remittances_count = 0
-        denied_without_remittances_percentage = 0
-        denied_with_overpayment_count = 0
-        denied_with_overpayment_percentage = 0
-   
-    else:
-        logger.info("Checking for denied claims with Payment ")
-        denied_with_payment = await claims.find({
+    async def get_denied_claims_with_payment(self) -> DataCount:
+        if self.denied_count == 0:
+            logger.info("No denied claims")
+            return DataCount(count=0, percentage=0.0)
+        logger.info("Checking for denied claims with Payment")
+        denied_with_payment = await self.claims.find({
             "claimStatus": "Denied",
             "claimAmountPaid": {"$gt": 0}
         }).to_list(length=None)
        
-        denied_with_payment_count = len(denied_with_payment)
-        denied_with_payment_percentage = (denied_with_payment_count / total_claims * 100) if total_claims > 0 else 0.0
+        count = len(denied_with_payment)
+        percentage = (count / self.total_claims * 100) if self.total_claims > 0 else 0.0
        
-        # Calculation of  total incorrectly paid amount
-       
-        if denied_with_payment_count > 0:
-            total_incorrect_payment = sum(
-                claim.get("claimAmountPaid", 0) for claim in denied_with_payment
-            )
-            logger.error(f"Found: {denied_with_payment_count} claims")
-            logger.error(f"Total Incorrectly Paid: ${total_incorrect_payment:,.2f}\n")
-           
+        if count > 0:
+            total_incorrect = sum(claim.get("claimAmountPaid", 0) for claim in denied_with_payment)
+            logger.error(f"Found: {count} claims")
+            logger.error(f"Total Incorrectly Paid: ${total_incorrect:,.2f}")
         else:
-            logger.info("No denied claims with payment found.\n")
-           
-        # Checking for the denied claims without remittance
-           
-        logger.info("Denied claims without remittance that is no denial reason")
+            logger.info("No denied claims with payment found")
        
-        denied_without_remittances = await claims.find({
+        return DataCount(count=count, percentage=round(percentage, 2))
+   
+    # To find denied claims without remittances
+   
+    async def get_denied_claims_without_remittances(self) -> DataCount:
+        if self.denied_count == 0:
+            return DataCount(count=0, percentage=0.0)
+        logger.info("Denied claims without remittance ")
+       
+        denied_without_remittances = await self.claims.find({
             "claimStatus": "Denied",
             "$or": [
                 {"chargeRemittances": {"$exists": False}},
@@ -119,185 +105,198 @@ async def claims_analysis(db):
             ]
         }).to_list(length=None)
        
-        denied_without_remittances_count = len(denied_without_remittances)
-        denied_without_remittances_percentage= (denied_without_remittances_count / total_claims * 100) if total_claims > 0 else 0.0  
+        count = len(denied_without_remittances)
+        percentage = (count / self.total_claims * 100) if self.total_claims > 0 else 0.0
+        logger.warning(f"Found: {count} claims")
+        return DataCount(count=count, percentage=round(percentage, 2))
    
-        logger.warning(f": {denied_without_remittances_count} claims")
+    # To find denied claims with overpayment
+   
+    async def get_denied_claims_with_overpayment(self) -> DataCount:
+        if self.denied_count == 0:
+            return DataCount(count=0, percentage=0.0)
        
-        # check for Denied claims with Overpayment  
+        logger.info("Denied claims with overpayment")
        
-        logger.info("Denied claims with Overpayment")
-        denied_with_overpayment = await claims.find({
+        denied_with_overpayment = await self.claims.find({
             "claimStatus": "Denied",
             "$expr": {"$gt": ["$claimAmountPaid", "$claimAmount"]}
         }).to_list(length=None)
        
-        denied_with_overpayment_count = len(denied_with_overpayment)
-        denied_with_overpayment_percentage = (denied_with_overpayment_count / total_claims * 100) if total_claims > 0 else 0.0
+        count = len(denied_with_overpayment)
+        percentage = (count / self.total_claims * 100) if self.total_claims > 0 else 0.0
        
-        if denied_with_overpayment_count > 0:
-           
+        if count > 0:
             total_overpayment = sum(
                 claim.get("claimAmountPaid", 0) - claim.get("claimAmount", 0)
                 for claim in denied_with_overpayment
             )
-            logger.info(f": found {denied_with_overpayment_count} denied claims with overpayment")
-            logger.info(f"Claims affected:{denied_with_overpayment_count:,}")
-            logger.info(f"Total overpaid:${total_overpayment:,.2f}")
+            logger.info(f"Found {count} denied claims with overpayment")
+            logger.info(f"Claims affected: {count:,}")
+            logger.info(f"Total overpaid: ${total_overpayment:,.2f}")
         else:
             logger.info("No denied claims with overpayment found")
+       
+        return DataCount(count=count, percentage=round(percentage, 2))
    
+    # To find open claims with payment
    
-    # Checking the Open claims with Payment  
-   
-    if open_count==0:
-        logger.info("No open claims to check further")
-        open_with_payment_count = 0
-        open_with_payment_percentage = 0
-    else:
+    async def get_open_claims_with_payment(self) -> DataCount:
+        if self.open_count == 0:
+            logger.info("no open claims to check further")
+            return DataCount(count=0, percentage=0.0)
+       
         logger.info("Checking for open claims with Payment")
-        open_with_payment = await claims.find({
+       
+        open_with_payment = await self.claims.find({
             "claimStatus": "Open",
             "claimAmountPaid": {"$gt": 0}
         }).to_list(length=None)
        
-        open_with_payment_count = len(open_with_payment)
-        open_with_payment_percentage = (open_with_payment_count / total_claims * 100) if total_claims > 0 else 0.0
-       
-        if open_with_payment_count > 0:
-            total_incorrect_open_payment = sum(
-                claim.get("claimAmountPaid", 0) for claim in open_with_payment
-            )
-            logger.error(f"Found: {open_with_payment_count} open claims with payment")
-            logger.error(f"Total Incorrectly Paid in Open Claims: ${total_incorrect_open_payment:,.2f}\n")
+        count = len(open_with_payment)
+        percentage = (count / self.total_claims * 100) if self.total_claims > 0 else 0.0
+        if count > 0:
+            total_incorrect = sum(claim.get("claimAmountPaid", 0) for claim in open_with_payment)
+            logger.error(f"Total Incorrectly Paid in Open Claims: ${total_incorrect:,.2f}")
         else:
-            logger.info("No open claims with payment found.\n")
-           
-   
-    # Checking for ClaimAmount paid greater than ClaimAmount
-   
-    paidamount_greater_than_claimamount= await claims.find({
-        "$expr": {"$gt": ["$claimAmountPaid", "$claimAmount"]}
-    }).to_list(length=None)
-    paidamount_greater_than_claimamount_count = len(paidamount_greater_than_claimamount)
-    paidamount_greater_than_claimamount_pct = (paidamount_greater_than_claimamount_count / total_claims * 100) if total_claims > 0 else 0.0
-   
-    #  ClaimAdjAmount greater than ClaimAmount
-   
-    adjamount_greater_than_claimamount=  await claims.find({
-        "$expr": {"$gt": ["$claimAdjAmount", "$claimAmount"]}
-    }).to_list(length=None)
-   
-    adjamount_greater_than_claimamount_count = len(adjamount_greater_than_claimamount)
-    adjamount_greater_than_claimamount_pct = (adjamount_greater_than_claimamount_count / total_claims * 100) if total_claims > 0 else 0.0
-   
-    # claimamount not equal to sum of charges
-   
-    claimamount_sum_mismatch=[
+            logger.info("No open claims with payment found")
        
-         {"$unwind": "$charges"},
-        {
-            "$group": {
-                "_id": "$_id",
-                "claimAmount": {"$first": "$claimAmount"},
-                "totalCharges": {"$sum": "$charges.amount"}
-            }
-        },
-        {
-            "$match": {
-                "$expr": {
-                    "$ne": [
-                        {"$round": ["$claimAmount", 2]},
-                        {"$round": ["$totalCharges", 2]}
-                    ]
-                }
-            }
-        },
-        {"$count": "mismatch_count"}
-    ]
+        return DataCount(count=count, percentage=round(percentage, 2))
    
-    claim_sum_mismatch_result = await claims.aggregate(claimamount_sum_mismatch).to_list(1)
-    claim_sum_mismatch_count = claim_sum_mismatch_result[0]["mismatch_count"] if claim_sum_mismatch_result else 0
-    claim_sum_mismatch_pct = (claim_sum_mismatch_count / total_claims * 100) if total_claims > 0 else 0.0
-   
-    # check for duplicate claims
-   
-    duplicate_claims_pipeline = [
-        {
-            "$group": {
-                "_id": "$claimId",
-                "count": {"$sum": 1}
-            }
-        },
-        {
-            "$match": {
-                "count": {"$gt": 1}
-            }
-        },
-        {
-            "$group": {
-                "_id": None,
-                "total_duplicate_claims": {"$sum": "$count"}
-            }
-        }
-    ]
-   
-    duplicate_claims_result = await claims.aggregate(duplicate_claims_pipeline).to_list(1)
-    duplicate_claims_count = duplicate_claims_result[0]["total_duplicate_claims"] if duplicate_claims_result else 0
-    duplicate_claims_pct = (duplicate_claims_count / total_claims * 100) if total_claims > 0 else 0.0
-   
-   
-    # Check for claimAmountPaid + claimAdjAmount > claimAmount
-   
-    paid_plus_adjustment_exceeds_claim = await claims.find({
-        "$expr": {
-            "$gt": [
-                {
-                    "$add": [
-                        {"$ifNull": ["$claimAmountPaid", 0]},
-                        {"$ifNull": ["$claimAdjAmount", 0]}
-                    ]
-                },
-                "$claimAmount"
-            ]
-        }
-    }).to_list(length=None)
-   
-    paid_plus_adjustment_exceeds_claim_count = len(paid_plus_adjustment_exceeds_claim)
-    paid_plus_adjustment_exceeds_claim_pct = (paid_plus_adjustment_exceeds_claim_count / total_claims * 100) if total_claims > 0 else 0.0
-   
-   
-    issues = ClaimIssues(
-    denied_with_payment=DataCount(count=denied_with_payment_count,percentage=round(denied_with_payment_percentage,2)),
-    denied_without_remittances=DataCount(
-        count=denied_without_remittances_count,
-        percentage=round(denied_without_remittances_percentage, 2)
-    ),
-    denied_with_overpayment=DataCount(count=denied_with_overpayment_count,
-        percentage=round(denied_with_overpayment_percentage, 2)
-    ),
-    open_with_payment=DataCount(
-        count=open_with_payment_count,
-        percentage=round(open_with_payment_percentage, 2)
-    ),
-   
-    paidamount_greater_than_claimamount=DataCount(count=paidamount_greater_than_claimamount_count, percentage=round(paidamount_greater_than_claimamount_pct, 2)),
-    adjamount_greater_than_claimamount=DataCount(count=adjamount_greater_than_claimamount_count, percentage=round(adjamount_greater_than_claimamount_pct, 2)),
-    claim_sum_mismatch=DataCount(count=claim_sum_mismatch_count, percentage=round(claim_sum_mismatch_pct, 2)),
-    duplicate_claims=DataCount(count=duplicate_claims_count, percentage=round(duplicate_claims_pct, 2)) ,
-    paid_plus_adjustment_exceeds_claim=DataCount(count=paid_plus_adjustment_exceeds_claim_count, percentage=round(paid_plus_adjustment_exceeds_claim_pct, 2))
-    )    
-   
-    return Claims_info(
-        total_claims=total_claims,
-        open_count=open_count,
-        sent_to_payer_count=sent_to_payer_count,
-        closed_count=closed_count,
-        denied_count=denied_count,
-        pending_count=pending_count,
-        pending_amount=pending_amount,
-        denial_rate=denial_rate,
-        denied_amount=denied_amount,
-        issues=issues
-    )
+    # To find paid amount exceeds claim amount
  
+    async def get_paid_amount_exceeds_claim(self) -> DataCount:
+       
+        logger.info("Checking for paid amount > claim amount...")
+       
+        results = await self.claims.find({
+            "$expr": {"$gt": ["$claimAmountPaid", "$claimAmount"]}
+        }).to_list(length=None)
+       
+        count = len(results)
+        percentage = (count / self.total_claims * 100) if self.total_claims > 0 else 0.0        
+        return DataCount(count=count, percentage=round(percentage, 2))
+   
+    # To find adjustment amount exceeds claim amount
+   
+    async def get_adjustment_exceeds_claim(self) -> DataCount:
+        logger.info("\nChecking for adjustment amount > claim amount...")
+       
+        results = await self.claims.find({
+            "$expr": {"$gt": ["$claimAdjAmount", "$claimAmount"]}
+        }).to_list(length=None)
+        count = len(results)
+        percentage = (count / self.total_claims * 100) if self.total_claims > 0 else 0.0
+        return DataCount(count=count, percentage=round(percentage, 2))
+   
+    # To find claimAmountPaid + claimAdjAmount exceeds claim amount
+   
+    async def get_paid_plus_adjustment_exceeds_claim(self) -> DataCount:
+        logger.info("Checking for (paid + adjustment) > claim amount")
+        results = await self.claims.find({
+            "$expr": {
+                "$gt": [
+                    {
+                        "$add": [
+                            {"$ifNull": ["$claimAmountPaid", 0]},
+                            {"$ifNull": ["$claimAdjAmount", 0]}
+                        ]
+                    },
+                    "$claimAmount"
+                ]
+            }
+        }).to_list(length=None)
+       
+        count = len(results)
+        percentage = (count / self.total_claims * 100) if self.total_claims > 0 else 0.0
+        return DataCount(count=count, percentage=round(percentage, 2))
+   
+     # To find claim amount not equal to sum of charges
+   
+    async def get_claim_amount_sum_mismatch(self) -> DataCount:
+       
+        logger.info("Checking for claim amount ≠ sum of charges")
+       
+        pipeline = [
+            {"$unwind": "$charges"},
+            {
+                "$group": {
+                    "_id": "$_id",
+                    "claimAmount": {"$first": "$claimAmount"},
+                    "totalCharges": {"$sum": "$charges.amount"}
+                }
+            },
+            {
+                "$match": {
+                    "$expr": {
+                        "$ne": [
+                            {"$round": ["$claimAmount", 2]},
+                            {"$round": ["$totalCharges", 2]}
+                        ]
+                    }
+                }
+            },
+            {"$count": "mismatch_count"}
+        ]
+       
+        result = await self.claims.aggregate(pipeline).to_list(1)
+        count = result[0]["mismatch_count"] if result else 0
+        percentage = (count / self.total_claims * 100) if self.total_claims > 0 else 0.0
+        return DataCount(count=count, percentage=round(percentage, 2))
+ 
+    #  To find duplicate claim IDs
+   
+    async def get_duplicate_claim_ids(self) -> DataCount:
+        logger.info("Checking for duplicate claims")
+       
+        pipeline = [
+            {"$group": {"_id": "$claimId", "count": {"$sum": 1}}},
+            {"$match": {"count": {"$gt": 1}}},
+            {"$group": {"_id": None, "total_duplicate_claims": {"$sum": "$count"}}}
+        ]
+       
+        result = await self.claims.aggregate(pipeline).to_list(1)
+        count = result[0]["total_duplicate_claims"] if result else 0
+        percentage = (count / self.total_claims * 100) if self.total_claims > 0 else 0.0        
+        return DataCount(count=count, percentage=round(percentage, 2))
+   
+ 
+    async def run_all(self) -> Claims_info:
+        logger.info("Claim Status Analysis")
+     
+        await self.get_claim_status_counts()
+        await self.get_pending_payment_info()
+        await self.get_denial_info()
+        logger.info("Running validation checks")
+       
+        issues = ClaimIssues(
+            denied_with_payment=await self.get_denied_claims_with_payment(),
+            denied_without_remittances=await self.get_denied_claims_without_remittances(),
+            denied_with_overpayment=await self.get_denied_claims_with_overpayment(),
+            open_with_payment=await self.get_open_claims_with_payment(),
+            paidamount_greater_than_claimamount=await self.get_paid_amount_exceeds_claim(),
+            adjamount_greater_than_claimamount=await self.get_adjustment_exceeds_claim(),
+            claim_sum_mismatch=await self.get_claim_amount_sum_mismatch(),
+            duplicate_claims=await self.get_duplicate_claim_ids(),
+            paid_plus_adjustment_exceeds_claim=await self.get_paid_plus_adjustment_exceeds_claim()
+        )
+ 
+        logger.info("Claims analysis complete")
+       
+        return Claims_info(
+            total_claims=self.total_claims,
+            open_count=self.open_count,
+            sent_to_payer_count=self.sent_to_payer_count,
+            closed_count=self.closed_count,
+            denied_count=self.denied_count,
+            pending_count=self.pending_count,
+            pending_amount=self.pending_amount,
+            denial_rate=self.denial_rate,
+            denied_amount=self.denied_amount,
+            issues=issues
+        )
+ 
+ 
+async def claims_analysis(db) -> Claims_info:
+    analyzer = ClaimsAnalyzer(db)
+    return await analyzer.run_all()

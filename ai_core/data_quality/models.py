@@ -27,6 +27,13 @@ class DiagnosisValidation(BaseModel):
     missing_occurrence_date: DataCount     
     missing_present_on_admission: DataCount
     
+    invalid_icd10_format: DataCount
+
+    primary_diagnosis_not_order_1: DataCount
+    invalid_diagnosis_status: DataCount
+    
+    invalid_diagnosis_type: DataCount
+    
 class Diagnosis(BaseModel):
     unique_icd_10_codes: int
     unique_icd_10_primary_codes: int
@@ -42,6 +49,18 @@ class ChargeValidation(BaseModel):
     charge_remittance_details_missing: DataCount
     charges_with_extreme_units: DataCount
     charges_with_empty_description: DataCount
+    
+    unit_price_calculation_mismatch: DataCount
+    negative_units: DataCount
+    zero_units_with_amount: DataCount
+    negative_unit_price: DataCount
+    missing_service_dates: DataCount
+    
+    future_service_dates: DataCount
+    very_old_service_dates: DataCount
+    duplicate_charges_same_date: DataCount
+    
+    charges_with_all_zero_amounts: DataCount
  
 class Charges(BaseModel):
     statistics: dict        
@@ -50,13 +69,19 @@ class Charges(BaseModel):
     low_value: dict
     issues: ChargeValidation
     
+class CPTValidation(BaseModel):
+    invalid_cpt_format: DataCount
+    invalid_modifier_codes: DataCount
+
 class CPT(BaseModel):
     cpt_overview: dict            
     top_cpt_codes: dict              
     rare_cpt_codes: dict          
     modifier_usage: dict                 
     financial_analysis: dict 
-    missing_cpt: dict 
+    missing_cpt: dict
+    issues: CPTValidation 
+
     
     
 class Payer(BaseModel):

@@ -28,7 +28,7 @@ async def run_data_quality(db):
         total_claims=payer_data["total_claims"],
         unique_payers=payer_data["unique_payers_count"],
         unique_mcos=payer_data["unique_payers_count"],
-        unique_cpt_codes=cpt_data["cpt_overview"]["unique_cpt_codes"],
+        unique_cpt_codes=cpt_data.cpt_overview["unique_cpt_codes"]
     )
    
     logger.info("Combining all results")
