@@ -23,14 +23,14 @@ async def run_data_quality(db):
     cpt_data = await cpt_analysis(db)
     claims_adjustment_data = await adjustment_analysis(db)
     diagnosis_data=await diagnosis_analysis(db)
-    
+   
     overview = Overview(
         total_claims=payer_data["total_claims"],
         unique_payers=payer_data["unique_payers_count"],
         unique_mcos=payer_data["unique_payers_count"],
-        unique_cpt_codes=cpt_data["cpt_overview"]["unique_cpt_codes"], 
+        unique_cpt_codes=cpt_data.cpt_overview["unique_cpt_codes"]
     )
-    
+   
     logger.info("Combining all results")
     combined_result = DataQualityResult(
         timestamp=datetime.now(),

@@ -182,6 +182,84 @@ class DiagnosisAnalyzer(BaseAnalyzer):
         ]
         return await self.run_pipeline(pipeline)
    
+    async def check_invalid_icd10_format(self) -> DataCount:
+        logger.info("Checking for invalid ICD-10 format")
+        
+        pipeline = [
+            {"$unwind": "$diagnoses"},
+            {"$match": {
+                "diagnoses.code": {"$exists": True, "$ne": None, "$ne": ""},
+                "$expr": {
+                    "$not": {
+                        "$regexMatch": {
+                            "input": "$diagnoses.code",
+                            "regex": "^[A-Z][0-9A-Z]{2,6}$"
+                        }
+                    }
+                }
+            }},
+            {"$group": {"_id": "$_id"}},
+            {"$count": "total"}
+        ]
+        
+        return await self.run_pipeline(pipeline)
+
+    async def check_primary_diagnosis_not_order_1(self) -> DataCount:
+        pipeline = [
+            {"$unwind": "$diagnoses"},
+            {"$match": {
+                "diagnoses.isPrimaryDiagnosis": True,
+                "$and": [
+                    {"diagnoses.order": {"$ne": "1"}},
+                    {"diagnoses.order": {"$ne": 1}}
+                ]
+            }},
+            {"$group": {"_id": "$_id"}},
+            {"$count": "total"}
+        ]
+        
+        return await self.run_pipeline(pipeline)
+
+    async def check_invalid_diagnosis_status(self) -> DataCount:
+        valid_statuses = ["A", "W", "I", "R", "D"]
+        
+        pipeline = [
+            {"$unwind": "$diagnoses"},
+            {"$match": {
+                "diagnoses.status": {
+                    "$exists": True, 
+                    "$ne": None, 
+                    "$ne": "",
+                    "$nin": valid_statuses
+                }
+            }},
+            {"$group": {"_id": "$_id"}},
+            {"$count": "total"}
+        ]
+        
+        return await self.run_pipeline(pipeline)
+
+
+    async def check_invalid_diagnosis_type(self) -> DataCount:
+    
+        valid_types = ["ABK", "ABF", "BK", "BF", "PRIMARY", "SECONDARY"]
+        
+        pipeline = [
+            {"$unwind": "$diagnoses"},
+            {"$match": {
+                "diagnoses.type": {
+                    "$exists": True,
+                    "$ne": None,
+                    "$ne": "",
+                    "$nin": valid_types
+                }
+            }},
+            {"$group": {"_id": "$_id"}},
+            {"$count": "total"}
+        ]
+        
+        return await self.run_pipeline(pipeline)
+
     async def run_all(self):
         logger.info("Starting diagnosis analysis")
        
@@ -217,7 +295,11 @@ class DiagnosisAnalyzer(BaseAnalyzer):
             missing_order=await self.check_missing_order(),
             duplicate_order=await self.check_duplicate_order(),
             missing_occurrence_date=await self.check_missing_occurrence_date(),    
-            missing_present_on_admission=await self.check_missing_present_on_admission()    
+            missing_present_on_admission=await self.check_missing_present_on_admission(),
+            invalid_icd10_format=await self.check_invalid_icd10_format(),
+            primary_diagnosis_not_order_1=await self.check_primary_diagnosis_not_order_1(),
+            invalid_diagnosis_status=await self.check_invalid_diagnosis_status(),
+            invalid_diagnosis_type=await self.check_invalid_diagnosis_type()
         )
        
         diagnosis_result = Diagnosis(
@@ -233,4 +315,5 @@ class DiagnosisAnalyzer(BaseAnalyzer):
 async def diagnosis_analysis(db):
     analyzer = DiagnosisAnalyzer(db)
     return await analyzer.run_all()
+ 
  
