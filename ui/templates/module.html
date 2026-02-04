@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ module_name | title }} Module</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="header">
+        <h1>{{ module_name | title }} Module</h1>
+        <a href="/" class="back-link">← Back to Dashboard</a>
+    </div>
+
+    <div class="container">
+        <!-- Summary -->
+        <div class="summary-box">
+            <p><strong>Total Claims:</strong> {{ "{:,}".format(total_claims) }}</p>
+            <p><strong>Issues Found:</strong> {{ issues | length }} types</p>
+        </div>
+
+        <!-- Issues List -->
+        <div class="issues-section">
+            <h2>Issues</h2>
+            
+            {% for issue_name, issue_data in issues.items() %}
+            <div class="issue-card">
+                <div class="issue-header">
+                    <h3>{{ issue_name | replace('_', ' ') | title }}</h3>
+                    <span class="issue-badge">{{ issue_data.count }} claims</span>
+                </div>
+                <div class="issue-body">
+                    <p><strong>{{ issue_data.percentage }}%</strong> affected</p>
+                    <a href="/issue/{{ module_name }}/{{ issue_name }}" class="btn-small">
+                        View Examples →
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>
