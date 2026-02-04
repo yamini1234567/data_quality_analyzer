@@ -16,21 +16,31 @@ from ai_core.data_quality.diagnosis_analysis import diagnosis_analysis
 
 async def run_data_quality(db):
     logger.info("Data Quality Analysis")
+    (
+        payer_data,
+        charges_data,
+        claims_data,
+        cpt_data,
+        claims_adjustment_data,
+        diagnosis_data
+    ) = await asyncio.gather(
+        payer_analysis(db),
+        charges_analysis(db),
+        claims_analysis(db),
+        cpt_analysis(db),
+        adjustment_analysis(db),
+        diagnosis_analysis(db)
+    )
     
-    payer_data = await payer_analysis(db)
-    charges_data = await charges_analysis(db)
-    claims_data = await claims_analysis(db)
-    cpt_data = await cpt_analysis(db)
-    claims_adjustment_data = await adjustment_analysis(db)
-    diagnosis_data=await diagnosis_analysis(db)
-   
+    logger.info("All analyses complete")
+    
     overview = Overview(
         total_claims=payer_data["total_claims"],
         unique_payers=payer_data["unique_payers_count"],
         unique_mcos=payer_data["unique_payers_count"],
         unique_cpt_codes=cpt_data.cpt_overview["unique_cpt_codes"]
     )
-   
+    
     logger.info("Combining all results")
     combined_result = DataQualityResult(
         timestamp=datetime.now(),
@@ -44,14 +54,11 @@ async def run_data_quality(db):
         diagnosis=diagnosis_data
     )
     
-    logger.info("Saving combined result")
-    collection = db["data_quality_results"]
-    result_dict = combined_result.model_dump()
-    await collection.insert_one(result_dict)
+    logger.info("Saving combined result to database")
+    await combined_result.insert()
     
-    logger.success(" Data quality complete!")
-    logger.info(f"Saved to database collection data quality results")
-    logger.info(f"Document ID: {result_dict.get('_id')}")
+    logger.success("Data quality analysis complete!")
+    logger.info(f"Document ID: {combined_result.id}") 
    
    
 async def run_checks(client):
@@ -76,12 +83,12 @@ async def run_checks(client):
  
 async def main():
 
-    logger.info("DATA QUALITY ANALYZER")
+    logger.info("Data quality analyzer")
    
-    logger.info("\nConnecting...")
+    logger.info("Connecting to database")
     client, db = await init_db()
-    logger.info("Connected")
-   
+    logger.info("Database Connected")
+    
     if config.RUN_CHECKS:
         await run_checks(client)
    

@@ -1,12 +1,14 @@
 from loguru import logger
 from .base import BaseAnalyzer
 from .models import DataCount, CPT, CPTValidation
- 
+import asyncio
  
 class CPTCodeAnalyzer(BaseAnalyzer):
    
     def __init__(self, db):
         super().__init__(db)
+        
+        
    
     async def get_cpt_overview(self):
         pipeline = [
@@ -211,31 +213,39 @@ class CPTCodeAnalyzer(BaseAnalyzer):
         return await self.run_pipeline(pipeline)
 
     async def run_all(self):
-            logger.info("Starting CPT code analysis")
-           
-            cpt_overview = await self.get_cpt_overview()
-            top_cpt_codes = await self.get_top_cpt_codes(cpt_overview["cpt_details"])
-            rare_cpt_codes = await self.get_rare_cpt_codes(cpt_overview["cpt_details"])
-            modifier_usage = await self.analyze_modifier_usage()
-            financial_analysis = await self.analyze_cpt_financial()
-            missing_cpt = await self.check_missing_cpt_codes()
-            invalid_cpt_format = await self.check_invalid_cpt_format()
-            invalid_modifier_codes = await self.check_invalid_modifier_codes()
-           
-            logger.info("CPT code analysis complete")
-           
-            return CPT(
-                cpt_overview=cpt_overview,
-                top_cpt_codes=top_cpt_codes,
-                rare_cpt_codes=rare_cpt_codes,
-                modifier_usage=modifier_usage,
-                financial_analysis=financial_analysis,
-                missing_cpt=missing_cpt,
-                issues=CPTValidation(
-                    invalid_cpt_format=invalid_cpt_format,
-                    invalid_modifier_codes=invalid_modifier_codes
-                )
-            )
+        logger.info("Starting CPT code analysis...")
+        cpt_overview = await self.get_cpt_overview()
+        (
+        top_cpt_codes,
+        rare_cpt_codes,
+        modifier_usage,
+        financial_analysis,
+        missing_cpt,
+        invalid_cpt_format,
+        invalid_modifier_codes
+        ) = await asyncio.gather(
+        self.get_top_cpt_codes(cpt_overview["cpt_details"]),
+        self.get_rare_cpt_codes(cpt_overview["cpt_details"]),
+        self.analyze_modifier_usage(),
+        self.analyze_cpt_financial(),
+        self.check_missing_cpt_codes(),
+        self.check_invalid_cpt_format(),
+        self.check_invalid_modifier_codes()
+       )
+        logger.info("CPT code analysis completed")
+        return CPT(
+              cpt_overview=cpt_overview,
+              top_cpt_codes=top_cpt_codes,
+              rare_cpt_codes=rare_cpt_codes,
+              modifier_usage=modifier_usage,
+              financial_analysis=financial_analysis,
+              missing_cpt=missing_cpt,
+              issues=CPTValidation(
+              invalid_cpt_format=invalid_cpt_format,
+              invalid_modifier_codes=invalid_modifier_codes
+             )
+        )
+        
             
             
 async def cpt_analysis(db):

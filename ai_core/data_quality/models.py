@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
- 
+from beanie import Document
  
 class DataCount(BaseModel):
     count: int
@@ -26,12 +26,9 @@ class DiagnosisValidation(BaseModel):
     duplicate_order: DataCount
     missing_occurrence_date: DataCount     
     missing_present_on_admission: DataCount
-    
     invalid_icd10_format: DataCount
-
     primary_diagnosis_not_order_1: DataCount
     invalid_diagnosis_status: DataCount
-    
     invalid_diagnosis_type: DataCount
     
 class Diagnosis(BaseModel):
@@ -49,13 +46,11 @@ class ChargeValidation(BaseModel):
     charge_remittance_details_missing: DataCount
     charges_with_extreme_units: DataCount
     charges_with_empty_description: DataCount
-    
     unit_price_calculation_mismatch: DataCount
     negative_units: DataCount
     zero_units_with_amount: DataCount
     negative_unit_price: DataCount
     missing_service_dates: DataCount
-    
     future_service_dates: DataCount
     very_old_service_dates: DataCount
     duplicate_charges_same_date: DataCount
@@ -119,9 +114,7 @@ class Claims_info(BaseModel):
     denied_amount: float
     issues: ClaimIssues
  
-class Adjustment(BaseModel):  
-    total_claims: int
-    claims_with_adjustments: int
+class AdjustmentValidation(BaseModel):
     negative_adjustments: DataCount
     adjustment_greater_than_claim: DataCount
     adjustment_exceeds_50_percent: DataCount
@@ -131,14 +124,26 @@ class Adjustment(BaseModel):
     charges_missing_adjustment_details: DataCount
     chargeadjustment_sum_mismatch: DataCount
     claim_adj_records_sum_mismatch: DataCount
+
+
+class Adjustment(BaseModel):  
+    total_claims: int
+    claims_with_adjustments: int
+    issues: AdjustmentValidation
  
-class DataQualityResult(BaseModel):
+class DataQualityResult(Document):
     timestamp: datetime
     version: int = 1
     overview: Optional[Overview] = None
     diagnosis: Optional[Diagnosis] = None
-    payer: Optional[Payer] = None
+    payer: Optional[dict] = None
     charges: Optional[Charges] = None
     cpt: Optional[CPT] = None
     claims: Optional[Claims_info] = None
-    adjustment: Optional[Adjustment] = None
+    adjustment: Optional[Adjustment] = None  
+    class Settings: 
+        name = "data_quality_results" 
+        indexes = [
+            "timestamp", 
+            "version",  
+        ]
