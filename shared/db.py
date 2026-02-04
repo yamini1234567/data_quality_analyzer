@@ -1,12 +1,10 @@
-"""
-Database Connection and Initialization
-"""
-
 import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from dotenv import load_dotenv
 from loguru import logger
+from ai_core.feature_readiness.appsettings import MAppSettings
+from ai_core.data_quality.models import DataQualityResult
 
 load_dotenv()
 
@@ -45,7 +43,7 @@ async def test_connection(client: AsyncIOMotorClient) -> bool:
 async def init_db():
     logger.info("DATABASE INITIALIZATION")
     
-    logger.info(" Creating MongoDB client")
+    logger.info("Creating MongoDB client")
     client = get_mongo_client()
     
     logger.info("Testing connection")
@@ -56,17 +54,25 @@ async def init_db():
     db = get_database(client, "rcm_test_db")
     
     logger.info("Initializing Beanie models")
-    from ai_core.feature_readiness.appsettings import MAppSettings
-    await init_beanie(database=db, document_models=[MAppSettings])
+
+    await init_beanie(
+        database=db, 
+        document_models=[
+            MAppSettings,
+            DataQualityResult
+        ]
+    )
     
     logger.info(f"Database initialized: {db.name}")
-    logger.info(f"Initialized 1 model(s):")
-    logger.info(" MAppSettings")
+    logger.info(f"Initialized 2 model(s):")
+    logger.info(" - MAppSettings")
+    logger.info(" - DataQualityResult")
+    
     return client, db
 
 
 async def close_db(client: AsyncIOMotorClient):
     if client:
-        logger.info("Closing database connection...")
+        logger.info("Closing database connection")
         client.close()
         logger.info("Database connection closed")

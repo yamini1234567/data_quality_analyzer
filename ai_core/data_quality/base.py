@@ -1,8 +1,7 @@
-from loguru import logger
 from ai_core.data_quality.models import DataCount
+from abc import ABC, abstractmethod 
 
-
-class BaseAnalyzer:
+class BaseAnalyzer(ABC):
     
     def __init__(self, db):
         self.db = db
@@ -16,26 +15,18 @@ class BaseAnalyzer:
     
     async def run_pipeline(self, pipeline, base_count=None):
         result = await self.claims.aggregate(pipeline).to_list(None)
-        count = result[0]["total"] if result else 0
-        
+        count = result[0]["total"] if result else 0 
         base = base_count if base_count else self.total_claims
         percentage = round((count / base * 100), 4) if base > 0 else 0.0
-        
         return DataCount(count=count, percentage=percentage)
     
-    async def count_documents(self, filter_query):
-        return await self.claims.count_documents(filter_query)
+    @abstractmethod
+    async def run_all(self):
+      pass
     
     async def aggregate(self, pipeline):
         return await self.claims.aggregate(pipeline).to_list(None)
     
-    async def find(self, filter_query, limit=None):
-        cursor = self.claims.find(filter_query)
-        if limit:
-            cursor = cursor.limit(limit)
-        return await cursor.to_list(length=None)
+    async def count_documents(self, filter_query):
+        return await self.claims.count_documents(filter_query)
     
-    async def distinct(self, field, filter_query=None):
-        if filter_query:
-            return await self.claims.distinct(field, filter_query)
-        return await self.claims.distinct(field)
