@@ -1,7 +1,7 @@
 from loguru import logger
 from .base import BaseAnalyzer
- 
- 
+import asyncio
+
 class PayerAnalyzer(BaseAnalyzer):
    
     def __init__(self, db):
@@ -59,75 +59,36 @@ class PayerAnalyzer(BaseAnalyzer):
         ]
        
         return await self.aggregate(pipeline)
-   
-    def payer_table(self, payer_table):
-        logger.info("\n")
-        logger.info("-" * 140)
-        logger.info(
-            f"{'Payer':35s} "
-            f"{'Total claims':>18s} "
-            f"{'Totalclosed claims':>18s} "
-            f"{'TotalDenied claims':>18s} "
-            f"{'Avg Claim Amount':>12s} "
-            f"{'Avg Paid Amount':>12s} "
-            f"{'Avg Denied Amount':>12s}"
-        )
-        logger.info("-" * 140)
-       
-        for payer in payer_table:
-            name = payer["_id"]
-            total = payer["total_claims"]
-            closed = payer["total_closed"]
-            denied = payer["total_denied"]
-            avg_claim = payer.get("avg_claim_amount") or 0
-            avg_paid = payer.get("avg_paid_amount") or 0
-            avg_denied = payer.get("avg_denied_amount") or 0
-           
-            logger.info(
-                f"{name:35s} "
-                f"{total:18,} "
-                f"{closed:18,} "
-                f"{denied:18,} "
-                f"${avg_claim:11,.2f} "
-                f"${avg_paid:11,.2f} "
-                f"${avg_denied:11,.2f}"
-            )
-   # Top 10 payers with most claims
-   
-    def top_10_payers(self, top_payers):
-        logger.info("Top 10 Payers with Most claims")
-        for i in range(len(top_payers)):
-            payer = top_payers[i]
-            name = payer["_id"]
-            count = payer["total_claims"]
-            logger.info(f"{i+1:2d}. {name:40s} {count:8,} claims")
-   
-   # Bottom 10 payers with least claims
-   
-    def bottom_10_payers(self, bottom_payers):   
-        logger.info("Payers with least claims")
-        for i in range(len(bottom_payers)):
-            payer = bottom_payers[i]
-            name = payer["_id"]
-            count = payer["total_claims"]
-            logger.info(f"{i+1:2d}. {name:40s} {count:8,} claims")
+    
+    async def get_unique_payers(self):
+        pipeline = [
+            {"$group": {"_id": "$payerMCO"}},
+            {"$project": {"_id": 1}}
+        ]
+        result = await self.aggregate(pipeline)
+        return [item["_id"] for item in result]
    
     async def run_all(self):
-        logger.info("Payer Analysis")
-        self.total_claims = await self.get_total_claims()
-        unique_payers = await self.distinct("payerMCO")
+        logger.info("Starting Payer Analysis")
+        (
+            total_claims,
+            unique_payers,
+            payer_table
+        ) = await asyncio.gather(
+            self.get_total_claims(),
+            self.get_unique_payers(),  
+            self.get_payer_distribution()
+        )
+        
+        self.total_claims = total_claims
         unique_payers_count = len(unique_payers)
-        logger.info(f"Total no of claims: {self.total_claims}")
-        logger.info(f"No of Unique payers: {unique_payers_count}")
-       
-        logger.info("Payer Distribution Table")
-        payer_table = await self.get_payer_distribution()
-        self.payer_table(payer_table)
+        logger.info(f"Total claims: {self.total_claims:,}")
+        logger.info(f"Unique payers: {unique_payers_count}")
+        logger.info(f"Payer distribution calculated for {len(payer_table)} payers")
+        
         top10_payers = payer_table[:10]
-        self.top_10_payers(top10_payers)
         least10_payers = payer_table[-10:]
-        self.bottom_10_payers(least10_payers)
-       
+        
         payer_results = {
             "total_claims": self.total_claims,
             "unique_payers_count": unique_payers_count,
@@ -166,11 +127,12 @@ class PayerAnalyzer(BaseAnalyzer):
                 ]
             }
         }
-       
+        
+        logger.info("Payer Analysis complete")
+        
         return payer_results
- 
- 
+
+
 async def payer_analysis(db):
     analyzer = PayerAnalyzer(db)
     return await analyzer.run_all()
- 

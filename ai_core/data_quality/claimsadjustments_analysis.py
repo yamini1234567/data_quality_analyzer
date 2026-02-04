@@ -1,19 +1,23 @@
 from loguru import logger
-from .models import  Adjustment
+from ai_core.data_quality.models import Adjustment, AdjustmentValidation, DataCount
 from .base import BaseAnalyzer
-  
+import asyncio
+
 class AdjustmentAnalyzer(BaseAnalyzer):
    
     def __init__(self, db):
         super().__init__(db)
+        
+   # To Check for Negative Adjustments 
    
     async def check_negative_adjustments(self):
-        logger.info("Checking for negative adjustments")
         pipeline = [
             {"$match": {"claimAdjAmount": {"$lt": 0}}},
             {"$count": "total"}
         ]
         return await self.run_pipeline(pipeline)
+ 
+     # To Check for claimAdjAmount Greater than Claim Amount
  
     async def check_adjustment_greater_than_claim(self):
         pipeline = [
@@ -22,8 +26,9 @@ class AdjustmentAnalyzer(BaseAnalyzer):
         ]
         return await self.run_pipeline(pipeline)
    
+        # To Check for claimAdjAmount exceeding 50% of Claim Amount
+      
     async def check_excessive_adjustments(self):
-        logger.info("Checking for excessive adjustments(>50%)")
         pipeline = [
             {
                 "$match": {
@@ -40,8 +45,9 @@ class AdjustmentAnalyzer(BaseAnalyzer):
         ]
         return await self.run_pipeline(pipeline)
  
+      # To Check for Missing Adjustment Details
+ 
     async def check_missing_adjustment_details(self):
-        logger.info("Checking for missing adjustment details")
         pipeline = [
             {
                 "$match": {
@@ -56,8 +62,9 @@ class AdjustmentAnalyzer(BaseAnalyzer):
         ]
         return await self.run_pipeline(pipeline)
  
+     # To Check whether adustmentAmount in charges is negative
+ 
     async def check_charge_negative_adjustments(self):
-        logger.info("Checking for charge negative adjustments")
         pipeline = [
             {"$unwind": "$charges"},
             {"$match": {"charges.adjustmentAmount": {"$lt": 0}}},
@@ -65,9 +72,10 @@ class AdjustmentAnalyzer(BaseAnalyzer):
             {"$count": "total"}
         ]
         return await self.run_pipeline(pipeline)
+    
+        # To Check whether adjustmentAmount in charges exceeds charge amount
  
     async def check_charge_adjustment_exceeds_amount(self):
-        logger.info("Checking for charge adjustment > charge amount")
         pipeline = [
             {"$unwind": "$charges"},
             {
@@ -79,9 +87,10 @@ class AdjustmentAnalyzer(BaseAnalyzer):
             {"$count": "total"}
         ]
         return await self.run_pipeline(pipeline)
+    
+    # To Check for charges with missing adjustment details
  
     async def check_charges_missing_adjustment_details(self):
-        logger.info("Checking for charges missing adjustment details")
         pipeline = [
             {"$unwind": "$charges"},
             {
@@ -97,6 +106,8 @@ class AdjustmentAnalyzer(BaseAnalyzer):
             {"$count": "total"}
         ]
         return await self.run_pipeline(pipeline)
+    
+    # To Check for mismatch between charge adjustmentAmount and sum of chargeAdjustments.adjAmount
     
     async def check_chargeadjustment_sum_mismatch(self):
         
@@ -124,6 +135,7 @@ class AdjustmentAnalyzer(BaseAnalyzer):
     {"$count": "total"}]
         return await self.run_pipeline(pipeline)
     
+    # To Check for mismatch between claimAdjAmount and sum of claimAdjustments.adjAmount
     
     async def check_claim_adj_records_sum_mismatch(self):
         
@@ -157,19 +169,44 @@ class AdjustmentAnalyzer(BaseAnalyzer):
         claims_with_adjustments = await self.count_documents({"claimAdjAmount": {"$gt": 0}})
         logger.info(f"Total Claims: {self.total_claims:,}")
         logger.info(f"Claims With Adjustments: {claims_with_adjustments:,}")
+        (
+        negative_adjustments,
+        adjustment_greater_than_claim,
+        adjustment_exceeds_50_percent,
+        missing_adjustment_details,
+        charge_negative_adjustments,
+        charge_adjustment_exceeds_amount,
+        charges_missing_adjustment_details,
+        chargeadjustment_sum_mismatch,
+        claim_adj_records_sum_mismatch
+        ) = await asyncio.gather(
+        self.check_negative_adjustments(),
+        self.check_adjustment_greater_than_claim(),
+        self.check_excessive_adjustments(),
+        self.check_missing_adjustment_details(),
+        self.check_charge_negative_adjustments(),
+        self.check_charge_adjustment_exceeds_amount(),
+        self.check_charges_missing_adjustment_details(),
+        self.check_chargeadjustment_sum_mismatch(),
+        self.check_claim_adj_records_sum_mismatch()
+       )
        
+        issues = AdjustmentValidation(
+            negative_adjustments=negative_adjustments,
+            adjustment_greater_than_claim=adjustment_greater_than_claim,
+            adjustment_exceeds_50_percent=adjustment_exceeds_50_percent,
+            missing_adjustment_details=missing_adjustment_details,
+            charge_negative_adjustments=charge_negative_adjustments,
+            charge_adjustment_exceeds_amount=charge_adjustment_exceeds_amount,
+            charges_missing_adjustment_details=charges_missing_adjustment_details,
+            chargeadjustment_sum_mismatch=chargeadjustment_sum_mismatch,
+            claim_adj_records_sum_mismatch=claim_adj_records_sum_mismatch
+        )
+        
         return Adjustment(
             total_claims=self.total_claims,
             claims_with_adjustments=claims_with_adjustments,
-            negative_adjustments=await self.check_negative_adjustments(),
-            adjustment_greater_than_claim=await self.check_adjustment_greater_than_claim(),
-            adjustment_exceeds_50_percent=await self.check_excessive_adjustments(),
-            missing_adjustment_details=await self.check_missing_adjustment_details(),
-            charge_negative_adjustments=await self.check_charge_negative_adjustments(),
-            charge_adjustment_exceeds_amount=await self.check_charge_adjustment_exceeds_amount(),
-            charges_missing_adjustment_details=await self.check_charges_missing_adjustment_details(),
-            chargeadjustment_sum_mismatch=await self.check_chargeadjustment_sum_mismatch(),
-            claim_adj_records_sum_mismatch=await self.check_claim_adj_records_sum_mismatch()
+            issues=issues
         )
  
 async def adjustment_analysis(db):

@@ -3,31 +3,18 @@ from loguru import logger
 from .base import BaseAnalyzer
 from .models import DataCount, Charges, ChargeValidation
 from datetime import datetime, timedelta
+import asyncio
  
 class ChargesAnalyzer(BaseAnalyzer):
-   
+
     def __init__(self, db):
         super().__init__(db)
    
-    # To get the total count of charges
-   
-    async def get_total_charges_count(self)->DataCount:
-        logger.info("\nCounting total charges")
-       
-        pipeline = [
-            {"$unwind": "$charges"},
-            {"$count": "total"}
-        ]
-       
-        result = await self.aggregate(pipeline)
-        count = result[0]["total"] if result else 0
-       
-        logger.info(f"Total Charges: {count:,}")
-        return count
+
     # To get the charge statistics
     
     async def get_charge_statistics(self):
-        logger.info("\nCalculating charge statistics")
+        logger.info("Calculating charge statistics")
        
         pipeline = [
             {"$unwind": "$charges"},
@@ -64,122 +51,117 @@ class ChargesAnalyzer(BaseAnalyzer):
         }
    
     # To get the charge ranges distribution
-   
+    
     async def get_charge_ranges(self):
-        logger.info("\nAnalyzing charge ranges")
-       
+        
         if self.total_charges == 0:
-            return []
-       
-        ranges = [
-            ("$0 - $500", 0, 500),
-            ("$501 - $1,000", 501, 1000),
-            ("$1,001 - $2,000", 1001, 2000),
-            ("$2,001 - $5,000", 2001, 5000),
-            ("$5,001 - $10,000", 5001, 10000),
-            ("$10,000+", 10001, float('inf'))
-        ]
-       
-        results = []
-        for range_name, min_val, max_val in ranges:
-            if max_val == float('inf'):
-                match_query = {"charges.amount": {"$gte": min_val}}
-            else:
-                match_query = {"charges.amount": {"$gte": min_val, "$lte": max_val}}
+            return [] 
+        
+        pipeline = [
+        {"$unwind": "$charges"},
+        {
+            "$bucketAuto": {
+                "groupBy": "$charges.amount",
+                "buckets": 6,
+                "output": {"count": {"$sum": 1}}
+            }
+        }
+    ]
+        results = await self.aggregate(pipeline)
+        formatted = []
+        for bucket in results:
+           min_val = bucket["_id"]["min"]
+           max_val = bucket["_id"]["max"]
+           count = bucket["count"]
+           percentage = (count / self.total_charges * 100) if self.total_charges > 0 else 0
+           formatted.append({ "range": f"${min_val:,.2f} - ${max_val:,.2f}",
+            "count": count,
+            "percentage": round(percentage, 2) })
            
-            pipeline = [
-                {"$unwind": "$charges"},
-                {"$match": match_query},
-                {"$count": "count"}
-            ]
-           
-            result = await self.aggregate(pipeline)
-            count = result[0]["count"] if result else 0
-            percentage = (count / self.total_charges * 100) if self.total_charges > 0 else 0
-           
-            results.append({
-                "range": range_name,
-                "count": count,
-                "percentage": round(percentage, 2)
-            })
-       
-        return results
-   
+        return formatted
+        
     # To get high value charges
    
     async def get_highvalue_charges(self):
+        
         logger.info("Analyzing high value charges (>$10,000)")
-       
-        count_pipeline = [
-            {"$unwind": "$charges"},
-            {"$match": {"charges.amount": {"$gt": 10000}}},
-            {"$count": "total"}
-        ]
-       
-        count_result = await self.aggregate(count_pipeline)
-        total_count = count_result[0]["total"] if count_result else 0
-       
-        logger.info(f"High value charges: {total_count:,}")
-       
-        top_10_pipeline = [
-            {"$unwind": "$charges"},
-            {"$match": {"charges.amount": {"$gt": 10000}}},
-            {
-                "$project": {
-                    "claimId": 1,
-                    "payerMCO": 1,
-                    "chargeAmount": "$charges.amount",
-                    "cptCode": "$charges.cptHcpcs"
-                }
-            },
-            {"$sort": {"chargeAmount": -1}},
-            {"$limit": 10}
-        ]
-       
-        high_charges = await self.aggregate(top_10_pipeline)
-       
-        return {
-            "count": total_count,
-            "top_10": [
-                {
-                    "claim_id": c.get("claimId"),
-                    "payer": c.get("payerMCO"),
-                    "cpt_code": c.get("cptCode"),
-                    "amount": c.get("chargeAmount")
-                }
-                for c in high_charges
-            ]
+        pipeline = [
+        {"$unwind": "$charges"},
+        {"$match": {"charges.amount": {"$gt": 10000}}},
+        {
+            "$facet": { 
+                "count": [
+                    {"$count": "total"}
+                ],
+                "top_10": [
+                    {
+                        "$project": {
+                            "claimId": 1,
+                            "payerMCO": 1,
+                            "chargeAmount": "$charges.amount",
+                            "cptCode": "$charges.cptHcpcs"
+                        }
+                    },
+                    {"$sort": {"chargeAmount": -1}},
+                    {"$limit": 10}
+                ]
+            }
         }
-   
+    ]
+        results = await self.aggregate(pipeline)  
+        if not results:
+          return {"count": 0, "top_10": []}
+        result = results[0]
+        total_count = result["count"][0]["total"] if result["count"] else 0
+        top_10_list = result["top_10"]
+    
+        return {
+        "count": total_count,
+        "top_10": [
+            {
+                "claim_id": c.get("claimId"),
+                "payer": c.get("payerMCO"),
+                "cpt_code": c.get("cptCode"),
+                "amount": c.get("chargeAmount")
+            }
+            for c in top_10_list
+        ]
+    }
+        
         # To get low value charges
    
     async def get_lowvalue_charges(self)->DataCount:
         logger.info("Analyzing low value charges")
-       
-        very_low_pipeline = [
-            {"$unwind": "$charges"},
-            {"$match": {"charges.amount": {"$gt": 0, "$lt": 1}}},
-            {"$count": "total"}
-        ]
-       
-        very_low_result = await self.run_pipeline(very_low_pipeline, base_count=self.total_charges)
-       
-        low_pipeline = [
-            {"$unwind": "$charges"},
-            {"$match": {"charges.amount": {"$gte": 1, "$lt": 10}}},
-            {"$count": "total"}
-        ]
-       
-        low_result = await self.run_pipeline(low_pipeline, base_count=self.total_charges)
-       
-        logger.info(f"Very low (<$1): {very_low_result.count:,} charges")
-        logger.info(f"Low ($1-$10): {low_result.count:,} charges")
+        
+        pipeline = [
+        {"$unwind": "$charges"},
+        {
+            "$facet": {
+                "very_low": [
+                    {"$match": {"charges.amount": {"$gt": 0, "$lt": 1}}},
+                    {"$count": "total"}
+                ],
+                "low": [
+                    {"$match": {"charges.amount": {"$gte": 1, "$lt": 10}}},
+                    {"$count": "total"}
+                ]
+            }
+        }
+    ]
+        results = await self.aggregate(pipeline)
+        
+        result = results[0]
+        very_low_count = result["very_low"][0]["total"] if result["very_low"] else 0
+        low_count = result["low"][0]["total"] if result["low"] else 0
+        very_low_percentage = round((very_low_count / self.total_charges * 100), 4) if self.total_charges > 0 else 0.0
+        low_percentage = round((low_count / self.total_charges * 100), 4) if self.total_charges > 0 else 0.0
+    
        
         return {
-            "very_low_count": very_low_result.count,
-            "very_low_percentage": very_low_result.percentage,
-            "low_count": low_result.count,
-            "low_percentage": low_result.percentage
+            "very_low_count": very_low_count,
+            "very_low_percentage": very_low_percentage,
+            "low_count": low_count,
+            "low_percentage": low_percentage
         }
    
     # To find charges where paid amount exceeds charge amount
@@ -220,20 +202,13 @@ class ChargesAnalyzer(BaseAnalyzer):
             {"$group": {"_id": "$_id"}},
             {"$count": "total"}
         ]
-       
-        result = await self.run_pipeline(pipeline, base_count=self.total_charges)
-       
-        if result.count > 0:
-            logger.warning(f"Found {result.count} charges")
-        else:
-            logger.info("No issues found")
-       
+        result = await self.run_pipeline(pipeline, base_count=self.total_charges)   
         return result
    
     # To find charges with zero amount
    
     async def check_zero_amount(self):
-        logger.info("\nChecking for zero amount charges")
+        logger.info("Checking for zero amount charges")
        
         pipeline = [
             {"$unwind": "$charges"},
@@ -248,7 +223,7 @@ class ChargesAnalyzer(BaseAnalyzer):
     # To find charges with negative amount
    
     async def check_negative_amount(self):
-        logger.info("\nChecking for negative amount charges")
+        logger.info("Checking for negative amount charges")
        
         pipeline = [
             {"$unwind": "$charges"},
@@ -285,7 +260,7 @@ class ChargesAnalyzer(BaseAnalyzer):
     # To find charges with payment but missing remittance details
    
     async def check_charge_remittance_details_missing(self):
-        logger.info("\nChecking for missing remittance details")
+        logger.info("Checking for missing remittance details")
        
         pipeline = [
             {"$unwind": "$charges"},
@@ -306,7 +281,7 @@ class ChargesAnalyzer(BaseAnalyzer):
     # To find charges with extreme unit counts
    
     async def check_extreme_units(self):
-        logger.info("\nChecking for extreme unit counts (>100)")
+        logger.info("Checking for extreme unit counts (>100)")
        
         pipeline = [
             {"$unwind": "$charges"},
@@ -318,18 +293,12 @@ class ChargesAnalyzer(BaseAnalyzer):
         ]
        
         result = await self.run_pipeline(pipeline, base_count=self.total_charges)
-       
-        if result.count > 0:
-            logger.warning(f"Found {result.count} charges")
-        else:
-            logger.info("No issues found")
-       
         return result
    
     # To find charges with empty description
    
     async def check_empty_description(self):
-        logger.info("\nChecking for empty descriptions")
+        logger.info("Checking for empty descriptions")
        
         pipeline = [
             {"$unwind": "$charges"},
@@ -513,44 +482,87 @@ class ChargesAnalyzer(BaseAnalyzer):
     
     async def run_all(self):
         logger.info("Starting charges analysis")
-        self.total_claims = await self.get_total_claims()
-        self.total_charges = await self.get_total_charges_count()
         statistics = await self.get_charge_statistics()
-        ranges = await self.get_charge_ranges()
-        high_value = await self.get_highvalue_charges()
-        low_value = await self.get_lowvalue_charges()
-        logger.info("Running validation checks")    
-        issues = ChargeValidation(
-            paid_greater_than_charge=await self.check_paid_greater_than_charge(),
-            paid_plus_adjustment_greater_than_charge=await self.check_paid_plus_adj_greater_than_charge(),
-            zero_charges=await self.check_zero_amount(),
-            negative_charges=await self.check_negative_amount(),
-            missing_unit_prices=await self.check_missing_unit_prices(),
-            charge_remittance_details_missing=await self.check_charge_remittance_details_missing(),
-            charges_with_extreme_units=await self.check_extreme_units(),
-            charges_with_empty_description=await self.check_empty_description(),
-            unit_price_calculation_mismatch=await self.check_unit_price_calculation_mismatch(),
-            negative_units=await self.check_negative_units(),
-            zero_units_with_amount=await self.check_zero_units_with_amount(),
-            negative_unit_price=await self.check_negative_unit_price(),
-            missing_service_dates=await self.check_missing_service_dates(),
-            future_service_dates=await self.check_future_service_dates(),
-            very_old_service_dates=await self.check_very_old_service_dates(),
-            duplicate_charges_same_date=await self.check_duplicate_charges_same_date(),
-            charges_with_all_zero_amounts=await self.check_charges_with_all_zero_amounts()
+        self.total_charges = statistics["count"] if statistics else 0 
+        self.total_claims = await self.get_total_claims()
+        (
+        ranges,
+        high_value,
+        low_value
+        ) = await asyncio.gather(
+        self.get_charge_ranges(),
+        self.get_highvalue_charges(),
+        self.get_lowvalue_charges()
         )
- 
+        logger.info("Running validation checks")
+        (
+        paid_greater_than_charge,
+        paid_plus_adjustment_greater_than_charge,
+        zero_charges,
+        negative_charges,
+        missing_unit_prices,
+        charge_remittance_details_missing,
+        charges_with_extreme_units,
+        charges_with_empty_description,
+        unit_price_calculation_mismatch,
+        negative_units,
+        zero_units_with_amount,
+        negative_unit_price,
+        missing_service_dates,
+        future_service_dates,
+        very_old_service_dates,
+        duplicate_charges_same_date,
+        charges_with_all_zero_amounts
+         ) = await asyncio.gather(
+        self.check_paid_greater_than_charge(),
+        self.check_paid_plus_adj_greater_than_charge(),
+        self.check_zero_amount(),
+        self.check_negative_amount(),
+        self.check_missing_unit_prices(),
+        self.check_charge_remittance_details_missing(),
+        self.check_extreme_units(),
+        self.check_empty_description(),
+        self.check_unit_price_calculation_mismatch(),
+        self.check_negative_units(),
+        self.check_zero_units_with_amount(),
+        self.check_negative_unit_price(),
+        self.check_missing_service_dates(),
+        self.check_future_service_dates(),
+        self.check_very_old_service_dates(),
+        self.check_duplicate_charges_same_date(),
+        self.check_charges_with_all_zero_amounts()
+        )
+
+        issues = ChargeValidation( 
+            paid_greater_than_charge=paid_greater_than_charge,
+            paid_plus_adjustment_greater_than_charge=paid_plus_adjustment_greater_than_charge,
+            zero_charges=zero_charges,
+            negative_charges=negative_charges,
+            missing_unit_prices=missing_unit_prices,
+            charge_remittance_details_missing=charge_remittance_details_missing,
+            charges_with_extreme_units=charges_with_extreme_units,
+            charges_with_empty_description=charges_with_empty_description,
+            unit_price_calculation_mismatch=unit_price_calculation_mismatch,
+            negative_units=negative_units,
+            zero_units_with_amount=zero_units_with_amount,
+            negative_unit_price=negative_unit_price,
+            missing_service_dates=missing_service_dates,
+            future_service_dates=future_service_dates,
+            very_old_service_dates=very_old_service_dates,
+            duplicate_charges_same_date=duplicate_charges_same_date,
+            charges_with_all_zero_amounts=charges_with_all_zero_amounts
+        )
+    
         logger.info("Charges analysis complete")
-       
+    
         return Charges(
             statistics=statistics,
             ranges=ranges,
             high_value=high_value,
             low_value=low_value,
             issues=issues
-        )
- 
- 
+       )
+        
 async def charges_analysis(db):
     analyzer = ChargesAnalyzer(db)
     return await analyzer.run_all()

@@ -1,6 +1,7 @@
 from loguru import logger
 from ai_core.data_quality.models import DataCount, Diagnosis, DiagnosisValidation
 from ai_core.data_quality.base import BaseAnalyzer
+import asyncio
  
  
 class DiagnosisAnalyzer(BaseAnalyzer):
@@ -262,55 +263,94 @@ class DiagnosisAnalyzer(BaseAnalyzer):
 
     async def run_all(self):
         logger.info("Starting diagnosis analysis")
-       
         self.total_claims = await self.get_total_claims()
-       
-        unique_icd10_pipeline = [
-            {"$unwind": "$diagnoses"},
-            {"$match": {"diagnoses.code": {"$exists": True, "$ne": None, "$ne": ""}}},
-            {"$group": {"_id": "$diagnoses.code"}},
-            {"$count": "total"}
-        ]
-        icd10_result = await self.aggregate(unique_icd10_pipeline)
-        unique_icd_10_codes = icd10_result[0]["total"] if icd10_result else 0
-       
-        unique_icd10_primary_pipeline = [
-            {"$unwind": "$diagnoses"},
-            {"$match": {"diagnoses.isPrimaryDiagnosis": True}},
-            {"$group": {"_id": "$diagnoses.code"}},
-            {"$count": "total"}
-        ]
-        icd10_primary_result = await self.aggregate(unique_icd10_primary_pipeline)
-        unique_icd_10_primary_codes = icd10_primary_result[0]["total"] if icd10_primary_result else 0
-       
-        Issues = DiagnosisValidation(
-            missing_diagnosis=await self.check_missing_diagnosis(),
-            missing_primary_diagnosis=await self.check_missing_primary_diagnosis(),
-            missing_description=await self.check_missing_description(),
-            missing_code=await self.check_missing_code(),
-            multiple_primary=await self.check_multiple_primary_diagnosis(),
-            missing_type=await self.check_missing_type(),
-            missing_status=await self.check_missing_status(),
-            order_mismatch=await self.check_order_1_not_primary(),
-            missing_order=await self.check_missing_order(),
-            duplicate_order=await self.check_duplicate_order(),
-            missing_occurrence_date=await self.check_missing_occurrence_date(),    
-            missing_present_on_admission=await self.check_missing_present_on_admission(),
-            invalid_icd10_format=await self.check_invalid_icd10_format(),
-            primary_diagnosis_not_order_1=await self.check_primary_diagnosis_not_order_1(),
-            invalid_diagnosis_status=await self.check_invalid_diagnosis_status(),
-            invalid_diagnosis_type=await self.check_invalid_diagnosis_type()
+        icd10_counts_pipeline = [
+                  {"$unwind": "$diagnoses"},
+           {
+            "$facet": {
+                "all_codes": [
+                    {"$match": {"diagnoses.code": {"$exists": True, "$ne": None, "$ne": ""}}},
+                    {"$group": {"_id": "$diagnoses.code"}},
+                    {"$count": "total"}
+                ],
+                "primary_codes": [
+                    {"$match": {"diagnoses.isPrimaryDiagnosis": True}},
+                    {"$group": {"_id": "$diagnoses.code"}},
+                    {"$count": "total"}
+                ]
+            }
+        }
+    ] 
+        
+        icd10_counts = await self.aggregate(icd10_counts_pipeline)
+        result = icd10_counts[0] if icd10_counts else {}
+        unique_icd_10_codes = result.get("all_codes", [{}])[0].get("total", 0)
+        unique_icd_10_primary_codes = result.get("primary_codes", [{}])[0].get("total", 0)
+        
+        (
+        missing_diagnosis,
+        missing_primary_diagnosis,
+        missing_description,
+        missing_code,
+        multiple_primary,
+        missing_type,
+        missing_status,
+        order_mismatch,
+        missing_order,
+        duplicate_order,
+        missing_occurrence_date,
+        missing_present_on_admission,
+        invalid_icd10_format,
+        primary_diagnosis_not_order_1,
+        invalid_diagnosis_status,
+        invalid_diagnosis_type
+        ) = await asyncio.gather(
+        self.check_missing_diagnosis(),
+        self.check_missing_primary_diagnosis(),
+        self.check_missing_description(),
+        self.check_missing_code(),
+        self.check_multiple_primary_diagnosis(),
+        self.check_missing_type(),
+        self.check_missing_status(),
+        self.check_order_1_not_primary(),
+        self.check_missing_order(),
+        self.check_duplicate_order(),
+        self.check_missing_occurrence_date(),
+        self.check_missing_present_on_admission(),
+        self.check_invalid_icd10_format(),
+        self.check_primary_diagnosis_not_order_1(),
+        self.check_invalid_diagnosis_status(),
+        self.check_invalid_diagnosis_type()
         )
-       
+    
+        Issues = DiagnosisValidation(
+            missing_diagnosis=missing_diagnosis,
+            missing_primary_diagnosis=missing_primary_diagnosis,
+            missing_description=missing_description,
+            missing_code=missing_code,
+            multiple_primary=multiple_primary,
+            missing_type=missing_type,
+            missing_status=missing_status,
+            order_mismatch=order_mismatch,
+            missing_order=missing_order,
+            duplicate_order=duplicate_order,
+            missing_occurrence_date=missing_occurrence_date,
+            missing_present_on_admission=missing_present_on_admission,
+            invalid_icd10_format=invalid_icd10_format,
+            primary_diagnosis_not_order_1=primary_diagnosis_not_order_1,
+            invalid_diagnosis_status=invalid_diagnosis_status,
+            invalid_diagnosis_type=invalid_diagnosis_type
+     )
+    
         diagnosis_result = Diagnosis(
             unique_icd_10_codes=unique_icd_10_codes,
             unique_icd_10_primary_codes=unique_icd_10_primary_codes,
             Issues=Issues
-        )
-       
+       )
+    
         logger.info("Diagnosis analysis complete")
-       
         return diagnosis_result
+    
    
 async def diagnosis_analysis(db):
     analyzer = DiagnosisAnalyzer(db)

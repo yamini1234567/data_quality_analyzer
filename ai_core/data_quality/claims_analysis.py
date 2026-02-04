@@ -1,7 +1,7 @@
-
 from loguru import logger
 from .base import BaseAnalyzer
 from .models import DataCount, Claims_info, ClaimIssues
+import asyncio
 
 
 class ClaimsAnalyzer(BaseAnalyzer):
@@ -11,17 +11,46 @@ class ClaimsAnalyzer(BaseAnalyzer):
     # To get the count of the different claim status's 
     
     async def get_claim_status_counts(self):
-        self.total_claims = await self.get_total_claims()
-        self.open_count = await self.count_documents({"claimStatus": "Open"})
-        self.sent_to_payer_count = await self.count_documents({"claimStatus": "Sent to Payor"})
-        self.closed_count = await self.count_documents({"claimStatus": "Closed"})
-        self.denied_count = await self.count_documents({"claimStatus": "Denied"})
-        logger.info(f"Total Claims: {self.total_claims:,}")
-        logger.info(f"Open: {self.open_count:,}")
-        logger.info(f"Sent to Payer: {self.sent_to_payer_count:,}")
-        logger.info(f"Closed: {self.closed_count:,}")
-        logger.info(f"Denied: {self.denied_count:,}")
+        pipeline = [
+        {
+            "$facet": {
+                "total": [
+                    {"$count": "count"}
+                ],
+                "open": [
+                    {"$match": {"claimStatus": "Open"}},
+                    {"$count": "count"}
+                ],
+                "sent_to_payer": [
+                    {"$match": {"claimStatus": "Sent to Payor"}},
+                    {"$count": "count"}
+                ],
+                "closed": [
+                    {"$match": {"claimStatus": "Closed"}},
+                    {"$count": "count"}
+                ],
+                "denied": [
+                    {"$match": {"claimStatus": "Denied"}},
+                    {"$count": "count"}
+                ]
+            }
+        }
+    ] 
+        results = await self.aggregate(pipeline)
+        result = results[0]
+        self.total_claims = result["total"][0]["count"] if result["total"] else 0
+        self.open_count = result["open"][0]["count"] if result["open"] else 0
+        self.sent_to_payer_count = result["sent_to_payer"][0]["count"] if result["sent_to_payer"] else 0
+        self.closed_count = result["closed"][0]["count"] if result["closed"] else 0
+        self.denied_count = result["denied"][0]["count"] if result["denied"] else 0
+        
+        logger.info(f"Total Claims: {self.total_claims:,} claims")
+        logger.info(f"Open Claims: {self.open_count:,} claims")
+        logger.info(f"Sent to Payer Claims: {self.sent_to_payer_count:,} claims")
+        logger.info(f"Closed Claims: {self.closed_count:,} claims")
+        logger.info(f"Denied Claims: {self.denied_count:,} claims")
     
+        
     # To get the pending payment information
     
     async def get_pending_payment_info(self):
@@ -53,7 +82,6 @@ class ClaimsAnalyzer(BaseAnalyzer):
         
         result = await self.aggregate(pipeline)
         self.denied_amount = result[0]["total_amount"] if result else 0
-        
         logger.info(f"Denied Count: {self.denied_count:,} claims")
         logger.info(f"Denial Rate: {self.denial_rate:.2f}%")
         logger.info(f"Denied Amount: ${self.denied_amount:,.2f}")
@@ -309,8 +337,7 @@ class ClaimsAnalyzer(BaseAnalyzer):
     ]
     
         result = await self.run_pipeline(pipeline)
-        return result
-       
+        return result   
            
     #  To find duplicate claim IDs
     
@@ -327,29 +354,54 @@ class ClaimsAnalyzer(BaseAnalyzer):
         return result
     
     async def run_all(self) -> Claims_info:
-
-        logger.info("Claim Status Analysis")
         await self.get_claim_status_counts()
         await self.get_pending_payment_info()
-        await self.get_denial_info() 
-        issues = ClaimIssues(
-            denied_with_payment=await self.get_denied_claims_with_payment(),
-            denied_without_remittances=await self.get_denied_claims_without_remittances(),
-            denied_with_overpayment=await self.get_denied_claims_with_overpayment(),
-            open_with_payment=await self.get_open_claims_with_payment(),
-            paidamount_greater_than_claimamount=await self.get_paid_amount_exceeds_claim(),
-            adjamount_greater_than_claimamount=await self.get_adjustment_exceeds_claim(),
-            claim_sum_mismatch=await self.get_claim_amount_sum_mismatch(),
-            duplicate_claims=await self.get_duplicate_claim_ids(),
-            paid_plus_adjustment_exceeds_claim=await self.get_paid_plus_adjustment_exceeds_claim(),
-            closed_with_zero_amtpaid_and_adj=await self.get_closed_with_zero_amtpaid_and_adj(),
-            claim_amount_paid_sum_mismatch=await self.get_claim_amount_paid_sum_mismatch(),
-            claim_adj_amount_sum_mismatch=await self.get_claim_adj_amount_sum_mismatch(),
-            closed_with_remaining_balanceamt=await self.get_closed_with_remaining_balanceamt()
+        await self.get_denial_info()
+        (
+        denied_with_payment,
+        denied_without_remittances,
+        denied_with_overpayment,
+        open_with_payment,
+        paidamount_greater_than_claimamount,
+        adjamount_greater_than_claimamount,
+        claim_sum_mismatch,
+        duplicate_claims,
+        paid_plus_adjustment_exceeds_claim,
+        closed_with_zero_amtpaid_and_adj,
+        claim_amount_paid_sum_mismatch,
+        claim_adj_amount_sum_mismatch,
+        closed_with_remaining_balanceamt
+        ) = await asyncio.gather(
+        self.get_denied_claims_with_payment(),
+        self.get_denied_claims_without_remittances(),
+        self.get_denied_claims_with_overpayment(),
+        self.get_open_claims_with_payment(),
+        self.get_paid_amount_exceeds_claim(),
+        self.get_adjustment_exceeds_claim(),
+        self.get_claim_amount_sum_mismatch(),
+        self.get_duplicate_claim_ids(),
+        self.get_paid_plus_adjustment_exceeds_claim(),
+        self.get_closed_with_zero_amtpaid_and_adj(),
+        self.get_claim_amount_paid_sum_mismatch(),
+        self.get_claim_adj_amount_sum_mismatch(),
+        self.get_closed_with_remaining_balanceamt()
         )
-        
-        logger.info("Claims analysis complete")
-        
+        issues = ClaimIssues(
+        denied_with_payment=denied_with_payment,
+        denied_without_remittances=denied_without_remittances,
+        denied_with_overpayment=denied_with_overpayment,
+        open_with_payment=open_with_payment,
+        paidamount_greater_than_claimamount=paidamount_greater_than_claimamount,
+        adjamount_greater_than_claimamount=adjamount_greater_than_claimamount,
+        claim_sum_mismatch=claim_sum_mismatch,
+        duplicate_claims=duplicate_claims,
+        paid_plus_adjustment_exceeds_claim=paid_plus_adjustment_exceeds_claim,
+        closed_with_zero_amtpaid_and_adj=closed_with_zero_amtpaid_and_adj,
+        claim_amount_paid_sum_mismatch=claim_amount_paid_sum_mismatch,
+        claim_adj_amount_sum_mismatch=claim_adj_amount_sum_mismatch,
+        closed_with_remaining_balanceamt=closed_with_remaining_balanceamt
+    )
+
         return Claims_info(
             total_claims=self.total_claims,
             open_count=self.open_count,
@@ -362,7 +414,6 @@ class ClaimsAnalyzer(BaseAnalyzer):
             denied_amount=self.denied_amount,
             issues=issues
         )
-
 
 async def claims_analysis(db) -> Claims_info:
     analyzer = ClaimsAnalyzer(db)
