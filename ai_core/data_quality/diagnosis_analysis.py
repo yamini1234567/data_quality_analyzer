@@ -5,8 +5,8 @@ import asyncio
 
 class DiagnosisAnalyzer(BaseAnalyzer):
    
-    def __init__(self, db):
-        super().__init__(db)
+    def __init__(self, db,filters=None):
+        super().__init__(db,filters)
     
     async def run_claim_level_checks_combined(self):
         pipeline = [
@@ -293,8 +293,10 @@ class DiagnosisAnalyzer(BaseAnalyzer):
         )
         
         result = icd10_counts[0] if icd10_counts else {}
-        unique_icd_10_codes = result.get("all_codes", [{}])[0].get("total", 0)
-        unique_icd_10_primary_codes = result.get("primary_codes", [{}])[0].get("total", 0)
+        all_codes = result.get("all_codes", [])
+        unique_icd_10_codes = all_codes[0].get("total", 0) if all_codes else 0
+        primary_codes = result.get("primary_codes", [])
+        unique_icd_10_primary_codes = primary_codes[0].get("total", 0) if primary_codes else 0
         
         Issues = DiagnosisValidation(
             missing_diagnosis=claim_results["missing_diagnosis"],
@@ -319,8 +321,12 @@ class DiagnosisAnalyzer(BaseAnalyzer):
             unique_icd_10_codes=unique_icd_10_codes,
             unique_icd_10_primary_codes=unique_icd_10_primary_codes,
             Issues=Issues
-        )
-
-async def diagnosis_analysis(db):
-    analyzer = DiagnosisAnalyzer(db)
+       )
+    
+        logger.info("Diagnosis analysis complete")
+        return diagnosis_result
+    
+   
+async def diagnosis_analysis(db, filters=None):
+    analyzer = DiagnosisAnalyzer(db, filters)
     return await analyzer.run_all()

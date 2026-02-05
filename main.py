@@ -13,87 +13,120 @@ from ai_core.data_quality.claimsadjustments_analysis import adjustment_analysis
 from ai_core.data_quality.cpt_code_analysis import cpt_analysis
 from ai_core.data_quality.models import DataQualityResult, Overview
 from ai_core.data_quality.diagnosis_analysis import diagnosis_analysis
-
+ 
 async def run_data_quality(db):
     logger.info("Data Quality Analysis")
-    (
-        payer_data,
-        charges_data,
-        claims_data,
-        cpt_data,
-        claims_adjustment_data,
-        diagnosis_data
-    ) = await asyncio.gather(
-        payer_analysis(db),
-        charges_analysis(db),
-        claims_analysis(db),
-        cpt_analysis(db),
-        adjustment_analysis(db),
-        diagnosis_analysis(db)
-    )
-    
-    logger.info("All analyses complete")
-    
-    overview = Overview(
-        total_claims=payer_data.total_claims,
-        unique_payers=payer_data.unique_payers_count,
-        unique_cpt_codes=cpt_data.cpt_overview["unique_cpt_codes"]
-    )
     
     current_time = datetime.now()
     
-    logger.info("Creating seperate result documents")
-    documents_to_save = [
-        DataQualityResult(
-            timestamp=current_time,
-            version=1,
-            analysis_type="overview",
-            quality_check=overview
-        ),
-        DataQualityResult(
-            timestamp=current_time,
-            version=1,
-            analysis_type="diagnosis",
-            quality_check=diagnosis_data
-        ),
-        DataQualityResult(
-            timestamp=current_time,
-            version=1,
-            analysis_type="payer",
-            quality_check=payer_data
-        ),
-        DataQualityResult(
-            timestamp=current_time,
-            version=1,
-            analysis_type="charges",
-            quality_check=charges_data
-        ),
-        DataQualityResult(
-            timestamp=current_time,
-            version=1,
-            analysis_type="cpt",
-            quality_check=cpt_data
-        ),
-        DataQualityResult(
-            timestamp=current_time,
-            version=1,
-            analysis_type="claims",
-            quality_check=claims_data
-        ),
-        DataQualityResult(
-            timestamp=current_time,
-            version=1,
-            analysis_type="adjustment",
-            quality_check=claims_adjustment_data
-        )
-    ]
-    logger.info("Saving results as seperate documents to database")
-    for doc in documents_to_save:
-        await doc.insert()
-        logger.info(f" Saved {doc.analysis_type} analysis - Document ID: {doc.id}")
+    total_claims = await db.claims.count_documents({})
+    payers = await db.claims.distinct("payerMCO")
+    unique_cpts = await db.claims.distinct("charges.cptHcpcs")
     
-    logger.success("Data quality analysis complete!")
-    logger.info(f"Total documents saved: {len(documents_to_save)}")
+    overview = Overview(
+        total_claims=total_claims,
+        unique_payers=len(payers),
+        unique_cpt_codes=len(unique_cpts)
+    )
+    
+    # Saving overview document
+    overview_document = DataQualityResult(
+        timestamp=current_time,
+        version=1,
+        analysis_type="overview",
+        quality_check=overview
+    )
+    await overview_document.insert()
+    logger.success(f"Saved overview - ID: {overview_document.id}")
+    
+    logger.info("Running payer analysis...")
+    payer_data = await payer_analysis(db)  
+    
+    # Saving payer document
+    payer_document = DataQualityResult(
+        timestamp=current_time,
+        version=1,
+        analysis_type="payer",
+        quality_check=payer_data
+    )
+    await payer_document.insert()
+    logger.success(f"Saved payer - ID: {payer_document.id}")
+    
+    
+    logger.info(f"Found {len(payers)} payers")
+    
+    for i in range(len(payers)):
+        payer = payers[i]
+        
+        logger.info(f"\nAnalyzing payer {i+1}/{len(payers)}: {payer}")
+        
+        filters = {'payer': payer}
+        
+        (
+            charges_data,
+            claims_data,
+            cpt_data,
+            claims_adjustment_data,
+            diagnosis_data
+        ) = await asyncio.gather(
+            charges_analysis(db, filters),
+            claims_analysis(db, filters),
+            cpt_analysis(db, filters),
+            adjustment_analysis(db, filters),
+            diagnosis_analysis(db, filters)
+        )
+        
+        logger.info("All analyses complete")
+        
+      
+        logger.info("Creating separate result documents")
+        documents_to_save = [
+            DataQualityResult(
+                timestamp=current_time,
+                version=1,
+                payer=payer,
+                analysis_type="diagnosis",
+                quality_check=diagnosis_data
+            ),
+            DataQualityResult(
+                timestamp=current_time,
+                version=1,
+                payer=payer,
+                analysis_type="charges",
+                quality_check=charges_data
+            ),
+            DataQualityResult(
+                timestamp=current_time,
+                version=1,
+                payer=payer,
+                analysis_type="cpt",
+                quality_check=cpt_data
+            ),
+            DataQualityResult(
+                timestamp=current_time,
+                version=1,
+                payer=payer,
+                analysis_type="claims",
+                quality_check=claims_data
+            ),
+            DataQualityResult(
+                timestamp=current_time,
+                version=1,
+                payer=payer,
+                analysis_type="adjustment",
+                quality_check=claims_adjustment_data
+            )
+        ]
+        
+        logger.info("Saving results as separate documents to database")
+        for doc in documents_to_save:
+            await doc.insert()
+            logger.info(f"  Saved {doc.analysis_type} analysis - Document ID: {doc.id}")
+        
+        logger.success(f"✅ Completed {payer} - Saved {len(documents_to_save)} documents")
+    # ✅ LOOP ENDS HERE
+    
+    logger.success(f"Data quality analysis complete! Processed {len(payers)} payers")
    
    
 async def run_checks(client):
@@ -117,13 +150,13 @@ async def run_checks(client):
     logger.info(f"\nChecks complete: {score:.1f}% ({passed}/{total})")
  
 async def main():
-
+ 
     logger.info("Data quality analyzer")
    
     logger.info("Connecting to database")
     client, db = await init_db()
     logger.info("Database Connected")
-    
+   
     if config.RUN_CHECKS:
         await run_checks(client)
    
@@ -132,5 +165,7 @@ async def main():
    
     await close_db(client)
  
-
+ 
 asyncio.run(main())
+ 
+ 

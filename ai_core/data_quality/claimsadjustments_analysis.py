@@ -5,8 +5,73 @@ import asyncio
 
 class AdjustmentAnalyzer(BaseAnalyzer):
    
-    def __init__(self, db):
-        super().__init__(db)
+    def __init__(self, db,filters=None):
+        super().__init__(db,filters)
+        
+   # To Check for Negative Adjustments 
+   
+    async def check_negative_adjustments(self):
+        pipeline = [
+            {"$match": {"claimAdjAmount": {"$lt": 0}}},
+            {"$count": "total"}
+        ]
+        return await self.run_pipeline(pipeline)
+ 
+     # To Check for claimAdjAmount Greater than Claim Amount
+ 
+    async def check_adjustment_greater_than_claim(self):
+        pipeline = [
+            {"$match": {"$expr": {"$gt": ["$claimAdjAmount", "$claimAmount"]}}},
+            {"$count": "total"}
+        ]
+        return await self.run_pipeline(pipeline)
+   
+        # To Check for claimAdjAmount exceeding 50% of Claim Amount
+      
+    async def check_excessive_adjustments(self):
+        pipeline = [
+            {
+                "$match": {
+                    "claimAdjAmount": {"$gt": 0},
+                    "$expr": {
+                        "$gt": [
+                            "$claimAdjAmount",
+                            {"$multiply": ["$claimAmount", 0.5]}
+                        ]
+                    }
+                }
+            },
+            {"$count": "total"}
+        ]
+        return await self.run_pipeline(pipeline)
+ 
+      # To Check for Missing Adjustment Details
+ 
+    async def check_missing_adjustment_details(self):
+        pipeline = [
+            {
+                "$match": {
+                    "claimAdjAmount": {"$gt": 0},
+                    "$or": [
+                        {"claimAdjustments": {"$size": 0}},
+                        {"claimAdjustments": {"$exists": False}}
+                    ]
+                }
+            },
+            {"$count": "total"}
+        ]
+        return await self.run_pipeline(pipeline)
+ 
+     # To Check whether adustmentAmount in charges is negative
+ 
+    async def check_charge_negative_adjustments(self):
+        pipeline = [
+            {"$unwind": "$charges"},
+            {"$match": {"charges.adjustmentAmount": {"$lt": 0}}},
+            {"$group": {"_id": "$_id"}},
+            {"$count": "total"}
+        ]
+        return await self.run_pipeline(pipeline)
     
     async def run_claim_level_checks_combined(self):
         pipeline = [
@@ -146,7 +211,7 @@ class AdjustmentAnalyzer(BaseAnalyzer):
 
     async def run_all(self):
         self.total_claims = await self.get_total_claims()
-        claims_with_adjustments = await self.claims.count_documents({"claimAdjAmount": {"$gt": 0}})
+        claims_with_adjustments = await self.claims.count_documents(self.filter | {"claimAdjAmount": {"$gt": 0}})
         
         (claim_results, charge_results) = await asyncio.gather(
             self.run_claim_level_checks_combined(),
@@ -170,7 +235,7 @@ class AdjustmentAnalyzer(BaseAnalyzer):
             claims_with_adjustments=claims_with_adjustments,
             issues=issues
         )
-
-async def adjustment_analysis(db):
-    analyzer = AdjustmentAnalyzer(db)
+ 
+async def adjustment_analysis(db, filters=None):
+    analyzer = AdjustmentAnalyzer(db, filters)
     return await analyzer.run_all()

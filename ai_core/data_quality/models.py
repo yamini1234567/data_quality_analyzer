@@ -17,14 +17,14 @@ class AnalysisType(str, Enum):
     CPT = "cpt"
     CLAIMS = "claims"
     ADJUSTMENT = "adjustment"
-    
-    
+   
+   
 class Overview(BaseModel):
     total_claims: int
     unique_payers: int
     unique_cpt_codes: int
-    
-    
+   
+   
 class DiagnosisValidation(BaseModel):
     missing_diagnosis: DataCount
     missing_primary_diagnosis: DataCount
@@ -36,19 +36,19 @@ class DiagnosisValidation(BaseModel):
     order_mismatch: DataCount
     missing_order: DataCount
     duplicate_order: DataCount
-    missing_occurrence_date: DataCount     
+    missing_occurrence_date: DataCount    
     missing_present_on_admission: DataCount
     invalid_icd10_format: DataCount
     primary_diagnosis_not_order_1: DataCount
     invalid_diagnosis_status: DataCount
     invalid_diagnosis_type: DataCount
-    
+   
 class Diagnosis(BaseModel):
     unique_icd_10_codes: int
     unique_icd_10_primary_codes: int
     Issues: DiagnosisValidation
-    
-    
+   
+   
 class ChargeValidation(BaseModel):
     paid_greater_than_charge: DataCount
     paid_plus_adjustment_greater_than_charge: DataCount
@@ -66,7 +66,7 @@ class ChargeValidation(BaseModel):
     future_service_dates: DataCount
     very_old_service_dates: DataCount
     duplicate_charges_same_date: DataCount
-    
+   
     charges_with_all_zero_amounts: DataCount
  
 class Charges(BaseModel):
@@ -75,22 +75,22 @@ class Charges(BaseModel):
     high_value: dict            
     low_value: dict
     issues: ChargeValidation
-    
+   
 class CPTValidation(BaseModel):
     invalid_cpt_format: DataCount
     invalid_modifier_codes: DataCount
-
+ 
 class CPT(BaseModel):
     cpt_overview: dict            
     top_cpt_codes: dict              
     rare_cpt_codes: dict          
-    modifier_usage: dict                 
-    financial_analysis: dict 
+    modifier_usage: dict                
+    financial_analysis: dict
     missing_cpt: dict
-    issues: CPTValidation 
-
-    
-    
+    issues: CPTValidation
+ 
+   
+   
 class Payer(BaseModel):
     total_claims: int
     unique_payers_count: int
@@ -111,8 +111,8 @@ class ClaimIssues(BaseModel):
     claim_amount_paid_sum_mismatch:DataCount
     claim_adj_amount_sum_mismatch:DataCount
     closed_with_remaining_balanceamt:DataCount
-    
-    
+   
+   
  
 class Claims_info(BaseModel):
     total_claims: int
@@ -136,8 +136,8 @@ class AdjustmentValidation(BaseModel):
     charges_missing_adjustment_details: DataCount
     chargeadjustment_sum_mismatch: DataCount
     claim_adj_records_sum_mismatch: DataCount
-
-
+ 
+ 
 class Adjustment(BaseModel):  
     total_claims: int
     claims_with_adjustments: int
@@ -156,14 +156,20 @@ QualityCheckData = Union[
 class DataQualityResult(Document):
     timestamp: datetime
     version: int = 1
+    payer: Optional[str] = None
     analysis_type: AnalysisType
     quality_check: QualityCheckData
     
-    
+   
+   
     class Settings:
         name = "data_quality_results"
         indexes = [
             "timestamp",
             "version",
+            "payer",
             "analysis_type",
         ]
+        keep_nulls = False
+ 
+ 

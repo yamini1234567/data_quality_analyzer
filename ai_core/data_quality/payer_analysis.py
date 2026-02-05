@@ -5,8 +5,8 @@ import asyncio
 
 class PayerAnalyzer(BaseAnalyzer):
    
-    def __init__(self, db):
-        super().__init__(db)
+    def __init__(self, db,filters=None):
+        super().__init__(db,filters)
    
     async def get_payer_distribution(self):
         pipeline = [
@@ -133,6 +133,6 @@ class PayerAnalyzer(BaseAnalyzer):
         return payer_result
 
 
-async def payer_analysis(db):
-    analyzer = PayerAnalyzer(db)
+async def payer_analysis(db, filters=None):
+    analyzer = PayerAnalyzer(db, filters)
     return await analyzer.run_all()

@@ -6,8 +6,9 @@ import asyncio
  
 class ChargesAnalyzer(BaseAnalyzer):
 
-    def __init__(self, db):
-        super().__init__(db)
+    def __init__(self, db,filters=None):
+        super().__init__(db,filters)
+   
 
     async def get_charge_statistics(self):
         pipeline = [
@@ -27,7 +28,13 @@ class ChargesAnalyzer(BaseAnalyzer):
         results = await self.aggregate(pipeline)
        
         if not results:
-            return None
+         return {
+            "total_charges": 0,
+            "avg_charge": 0,
+            "min_charge": 0,
+            "max_charge": 0,
+            "count": 0
+        }
        
         stats = results[0]
        
@@ -436,8 +443,9 @@ class ChargesAnalyzer(BaseAnalyzer):
             high_value=high_value,
             low_value=low_value,
             issues=issues
-       )      
-async def charges_analysis(db):
-    analyzer = ChargesAnalyzer(db)
+       )
+        
+async def charges_analysis(db, filters=None):
+    analyzer = ChargesAnalyzer(db, filters)
     return await analyzer.run_all()
 

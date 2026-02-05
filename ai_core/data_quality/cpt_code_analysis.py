@@ -5,8 +5,10 @@ import asyncio
  
 class CPTCodeAnalyzer(BaseAnalyzer):
    
-    def __init__(self, db):
-        super().__init__(db)
+    def __init__(self, db,filters=None):
+        super().__init__(db,filters)
+        
+        
    
     async def get_cpt_overview(self):
         pipeline = [
@@ -253,6 +255,6 @@ class CPTCodeAnalyzer(BaseAnalyzer):
             )
         )
 
-async def cpt_analysis(db):
-    analyzer = CPTCodeAnalyzer(db)
+async def cpt_analysis(db, filters=None):
+    analyzer = CPTCodeAnalyzer(db, filters)
     return await analyzer.run_all()
