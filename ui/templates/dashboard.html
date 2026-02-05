@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Data Quality Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Data Quality Dashboard</h1>
+      <p class="timestamp">Last Analysis: {{ data.timestamp.strftime('%Y-%m-%d') }}</p>
+    </div>
+
+    <div class="container">
+      <!-- Overview Cards -->
+      <div class="overview-section">
+        <h2>Overview</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-number">{{ "{:,}".format(data.overview.total_claims) }}</div>
+            <div class="stat-label">Total Claims</div>
+          </div>
+          <div class="stat-card warning">
+            <div class="stat-number">{{ total_issue_types }}</div>
+            <div class="stat-label">Issue Types Found</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">{{ data.overview.unique_cpt_codes }}</div>
+            <div class="stat-label">Unique CPT Codes</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">{{ data.overview.unique_payers }}</div>
+            <div class="stat-label">Unique Payers</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      <div class="chart-section">
+        <h2>Issues by Module</h2>
+        <div class="chart-container">
+          <canvas id="moduleChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Module Cards -->
+      <div class="modules-section">
+        <h2>Data Quality Issues by Module</h2>
+
+        {% set modules = [
+          {'name': 'claims', 'title': 'Claims'},
+          {'name': 'charges', 'title': 'Charges'},
+          {'name': 'diagnosis', 'title': 'Diagnosis'},
+          {'name': 'cpt', 'title': 'CPT'},
+          {'name': 'adjustment', 'title': 'Adjustments'}
+        ] %}
+
+        {% for module in modules %}
+        <div class="module-card">
+          <div class="module-header">
+            <span class="module-title">{{ module.title }} Module</span>
+            <span class="issue-count">{{ module_issue_types[module.name] }} Issue Types</span>
+          </div>
+          <a href="/module/{{ module.name }}" class="btn">View Details →</a>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Chart Script -->
+    <script>
+      new Chart(document.getElementById('moduleChart'), {
+        type: 'bar',
+        data: {
+          labels: ['Claims', 'Charges', 'Diagnosis', 'CPT', 'Adjustments'],
+          datasets: [{
+            label: 'Number of Issues',
+            data: [
+              {{ module_issue_types.claims }},
+              {{ module_issue_types.charges }},
+              {{ module_issue_types.diagnosis }},
+              {{ module_issue_types.cpt }},
+              {{ module_issue_types.adjustment }}
+            ],
+            backgroundColor: [
+              'rgba(54, 162, 235, 0.8)',
+              'rgba(255, 99, 132, 0.8)',
+              'rgba(255, 206, 86, 0.8)',
+              'rgba(75, 192, 192, 0.8)',
+              'rgba(255, 159, 64, 0.8)'
+            ]
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true }
+          },
+          plugins: {
+            legend: { display: false }
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

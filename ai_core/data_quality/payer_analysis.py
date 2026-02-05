@@ -1,5 +1,6 @@
 from loguru import logger
 from .base import BaseAnalyzer
+from .models import Payer
 import asyncio
 
 class PayerAnalyzer(BaseAnalyzer):
@@ -89,10 +90,10 @@ class PayerAnalyzer(BaseAnalyzer):
         top10_payers = payer_table[:10]
         least10_payers = payer_table[-10:]
         
-        payer_results = {
-            "total_claims": self.total_claims,
-            "unique_payers_count": unique_payers_count,
-            "all_payers": [
+        payer_result = Payer(
+            total_claims=self.total_claims,
+            unique_payers_count=unique_payers_count,
+            all_payers=[
                 {
                     "payer_name": p["_id"],
                     "total_claims": p["total_claims"],
@@ -101,10 +102,11 @@ class PayerAnalyzer(BaseAnalyzer):
                     "avg_claim_amount": p.get("avg_claim_amount", 0),
                     "avg_paid_amount": p.get("avg_paid_amount", 0),
                     "avg_denied_amount": p.get("avg_denied_amount", 0)
+                    
                 }
                 for p in payer_table
             ],
-            "payer_summary": {
+            payer_summary= {
                 "total_payers": len(payer_table),
                 "top_10_payers": [
                     {
@@ -121,16 +123,14 @@ class PayerAnalyzer(BaseAnalyzer):
                 "bottom_10_payers": [
                     {
                         "payer_name": p["_id"],
-                        "total_claims": p["total_claims"]
+                        "total_claims": p["total_claims"] 
                     }
                     for p in least10_payers
                 ]
             }
-        }
-        
+        )
         logger.info("Payer Analysis complete")
-        
-        return payer_results
+        return payer_result
 
 
 async def payer_analysis(db, filters=None):

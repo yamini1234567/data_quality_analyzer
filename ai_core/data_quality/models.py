@@ -143,11 +143,10 @@ class Adjustment(BaseModel):
     claims_with_adjustments: int
     issues: AdjustmentValidation
     
-   
 QualityCheckData = Union[
                           Overview,
                           Diagnosis,
-                          dict,
+                          Payer,
                           Charges,
                           CPT,
                           Claims_info,

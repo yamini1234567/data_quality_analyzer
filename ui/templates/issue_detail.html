@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ issue_name | replace('_', ' ') | title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <div class="header">
+      <h1>{{ issue_name | replace('_', ' ') | title }}</h1>
+      <a href="/module/{{ module_name }}" class="back-link">
+        ← Back to {{ module_name | title }} Module
+      </a>
+    </div>
+
+    <div class="container">
+      <!-- Summary -->
+      <div class="detail-summary">
+        <h2>Summary</h2>
+        <div class="summary-grid">
+          <div class="summary-item">
+            <span class="label">Total Affected:</span>
+            <span class="value">{{ issue_data.count }} claims</span>
+          </div>
+          <div class="summary-item">
+            <span class="label">Percentage:</span>
+            <span class="value">{{ issue_data.percentage }}%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Examples Table -->
+      <div class="examples-section">
+        <h2>Examples from Your Data</h2>
+
+        {% if examples %}
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <!-- Claims Module Columns -->
+                {% if module_name == "claims" %}
+                  <th>Claim ID</th>
+                  <th>Status</th>
+                  <th>Claim Amount</th>
+                  <th>Amount Paid</th>
+                  <th>Adjustment</th>
+                  <th>Payer</th>
+
+                <!-- Charges Module Columns -->
+                {% elif module_name == "charges" %}
+                  <th>Claim ID</th>
+                  <th>CPT Code</th>
+                  <th>Service Date</th>
+                  <th>Amount</th>
+                  <th>Paid</th>
+                  <th>Adjustment</th>
+                  <th>Units</th>
+
+                <!-- Diagnosis Module Columns -->
+                {% elif module_name == "diagnosis" %}
+                  <th>Claim ID</th>
+                  <th>Code</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Type</th>
+
+                <!-- CPT Module Columns -->
+                {% elif module_name == "cpt" %}
+                  <th>Claim ID</th>
+                  <th>CPT Code</th>
+                  <th>Modifier</th>
+                  <th>Service Date</th>
+                  <th>Amount</th>
+                  <th>Units</th>
+
+                <!-- Adjustment Module Columns -->
+                {% elif module_name == "adjustment" %}
+                  <th>Claim ID</th>
+                  <th>Claim Amount</th>
+                  <th>Claim Paid</th>
+                  <th>Claim Adj</th>
+                  <th>Charge Amount</th>
+                  <th>Charge Paid</th>
+                  <th>Charge Adj</th>
+                {% endif %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for example in examples[:10] %}
+              <tr>
+                <!-- Claims Module Data -->
+                {% if module_name == "claims" %}
+                  <td>{{ example._id }}</td>
+                  <td><span class="status-badge">{{ example.claimStatus }}</span></td>
+                  <td>${{ "{:,.2f}".format(example.claimAmount) }}</td>
+                  <td>${{ "{:,.2f}".format(example.claimAmountPaid) }}</td>
+                  <td>${{ "{:,.2f}".format(example.claimAdjAmount) }}</td>
+                  <td>{{ example.payerMCO }}</td>
+
+                <!-- Charges Module Data -->
+                {% elif module_name == "charges" %}
+                  <td>{{ example._id }}</td>
+                  <td>{{ example.charges.cptHcpcs }}</td>
+                  <td>{{ example.charges.serviceDate }}</td>
+                  <td>${{ "{:,.2f}".format(example.charges.amount) }}</td>
+                  <td>${{ "{:,.2f}".format(example.charges.amountPaid or 0) }}</td>
+                  <td>${{ "{:,.2f}".format(example.charges.adjustmentAmount or 0) }}</td>
+                  <td>{{ example.charges.unit }}</td>
+
+                <!-- Diagnosis Module Data -->
+                {% elif module_name == "diagnosis" %}
+                  <td>{{ example._id }}</td>
+                  <td>{{ example.diagnoses.code }}</td>
+                  <td>{{ example.diagnoses.description }}</td>
+                  <td>{{ example.diagnoses.status }}</td>
+                  <td>{{ example.diagnoses.type }}</td>
+
+                <!-- CPT Module Data -->
+                {% elif module_name == "cpt" %}
+                  <td>{{ example._id }}</td>
+                  <td>{{ example.charges.cptHcpcs }}</td>
+                  <td>{{ example.charges.modifier }}</td>
+                  <td>{{ example.charges.serviceDate }}</td>
+                  <td>${{ "{:,.2f}".format(example.charges.amount) }}</td>
+                  <td>{{ example.charges.unit }}</td>
+
+                <!-- Adjustment Module Data -->
+                {% elif module_name == "adjustment" %}
+                  <td>{{ example._id }}</td>
+                  <td>${{ "{:,.2f}".format(example.claimAmount) }}</td>
+                  <td>${{ "{:,.2f}".format(example.claimAmountPaid) }}</td>
+                  <td>${{ "{:,.2f}".format(example.claimAdjAmount) }}</td>
+                  {% if example.charges is mapping %}
+                    <td>${{ "{:,.2f}".format(example.charges.amount or 0) }}</td>
+                    <td>${{ "{:,.2f}".format(example.charges.amountPaid or 0) }}</td>
+                    <td>${{ "{:,.2f}".format(example.charges.adjustmentAmount or 0) }}</td>
+                  {% else %}
+                    <td>N/A</td>
+                    <td>N/A</td>
+                    <td>N/A</td>
+                  {% endif %}
+                {% endif %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <p class="example-count">
+          Showing {{ [examples|length, 10]|min }} of {{ issue_data.count }} affected claims
+        </p>
+        {% else %}
+        <p class="no-data">No examples available for this issue.</p>
+        {% endif %}
+      </div>
+    </div>
+  </body>
+</html>
