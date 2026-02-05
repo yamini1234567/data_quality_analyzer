@@ -1,12 +1,24 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional,Union
 from datetime import datetime
 from beanie import Document
+from enum import Enum
  
 class DataCount(BaseModel):
     count: int
     percentage: float  
  
+ 
+class AnalysisType(str, Enum):
+    OVERVIEW = "overview"
+    DIAGNOSIS = "diagnosis"
+    PAYER = "payer"
+    CHARGES = "charges"
+    CPT = "cpt"
+    CLAIMS = "claims"
+    ADJUSTMENT = "adjustment"
+    
+    
 class Overview(BaseModel):
     total_claims: int
     unique_payers: int
@@ -130,20 +142,28 @@ class Adjustment(BaseModel):
     total_claims: int
     claims_with_adjustments: int
     issues: AdjustmentValidation
+    
+QualityCheckData = Union[
+                          Overview,
+                          Diagnosis,
+                          Payer,
+                          Charges,
+                          CPT,
+                          Claims_info,
+                          Adjustment
+                          ]
  
 class DataQualityResult(Document):
     timestamp: datetime
     version: int = 1
-    overview: Optional[Overview] = None
-    diagnosis: Optional[Diagnosis] = None
-    payer: Optional[dict] = None
-    charges: Optional[Charges] = None
-    cpt: Optional[CPT] = None
-    claims: Optional[Claims_info] = None
-    adjustment: Optional[Adjustment] = None  
-    class Settings: 
-        name = "data_quality_results" 
+    analysis_type: AnalysisType
+    quality_check: QualityCheckData
+    
+    
+    class Settings:
+        name = "data_quality_results"
         indexes = [
-            "timestamp", 
-            "version",  
+            "timestamp",
+            "version",
+            "analysis_type",
         ]

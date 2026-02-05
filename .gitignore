@@ -49,3 +49,12 @@ data/
 # MongoDB
 mongodb/
 dump/
+
+# Environment variables
+.env
+ui/.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
