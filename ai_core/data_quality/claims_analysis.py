@@ -5,8 +5,8 @@ import asyncio
 
 
 class ClaimsAnalyzer(BaseAnalyzer):
-    def __init__(self, db):
-        super().__init__(db)
+    def __init__(self, db,filters=None):
+        super().__init__(db,filters)
     
     # To get the count of the different claim status's 
     
@@ -415,6 +415,6 @@ class ClaimsAnalyzer(BaseAnalyzer):
             issues=issues
         )
 
-async def claims_analysis(db) -> Claims_info:
-    analyzer = ClaimsAnalyzer(db)
+async def claims_analysis(db, filters=None) -> Claims_info:
+    analyzer = ClaimsAnalyzer(db, filters)
     return await analyzer.run_all()

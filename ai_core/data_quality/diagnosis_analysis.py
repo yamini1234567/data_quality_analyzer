@@ -6,8 +6,8 @@ import asyncio
  
 class DiagnosisAnalyzer(BaseAnalyzer):
    
-    def __init__(self, db):
-        super().__init__(db)
+    def __init__(self, db,filters=None):
+        super().__init__(db,filters)
        
     async def check_missing_diagnosis(self)->DataCount:
         pipeline = [
@@ -284,8 +284,10 @@ class DiagnosisAnalyzer(BaseAnalyzer):
         
         icd10_counts = await self.aggregate(icd10_counts_pipeline)
         result = icd10_counts[0] if icd10_counts else {}
-        unique_icd_10_codes = result.get("all_codes", [{}])[0].get("total", 0)
-        unique_icd_10_primary_codes = result.get("primary_codes", [{}])[0].get("total", 0)
+        all_codes = result.get("all_codes", [])
+        unique_icd_10_codes = all_codes[0].get("total", 0) if all_codes else 0
+        primary_codes = result.get("primary_codes", [])
+        unique_icd_10_primary_codes = primary_codes[0].get("total", 0) if primary_codes else 0
         
         (
         missing_diagnosis,
@@ -352,8 +354,8 @@ class DiagnosisAnalyzer(BaseAnalyzer):
         return diagnosis_result
     
    
-async def diagnosis_analysis(db):
-    analyzer = DiagnosisAnalyzer(db)
+async def diagnosis_analysis(db, filters=None):
+    analyzer = DiagnosisAnalyzer(db, filters)
     return await analyzer.run_all()
  
  

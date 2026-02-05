@@ -5,8 +5,8 @@ import asyncio
 
 class AdjustmentAnalyzer(BaseAnalyzer):
    
-    def __init__(self, db):
-        super().__init__(db)
+    def __init__(self, db,filters=None):
+        super().__init__(db,filters)
         
    # To Check for Negative Adjustments 
    
@@ -166,7 +166,8 @@ class AdjustmentAnalyzer(BaseAnalyzer):
  
     async def run_all(self):
         self.total_claims = await self.get_total_claims()
-        claims_with_adjustments = await self.count_documents({"claimAdjAmount": {"$gt": 0}})
+        claims_with_adjustments = await self.claims.count_documents(
+            self.filter | {"claimAdjAmount": {"$gt": 0}})
         logger.info(f"Total Claims: {self.total_claims:,}")
         logger.info(f"Claims With Adjustments: {claims_with_adjustments:,}")
         (
@@ -209,7 +210,7 @@ class AdjustmentAnalyzer(BaseAnalyzer):
             issues=issues
         )
  
-async def adjustment_analysis(db):
-    analyzer = AdjustmentAnalyzer(db)
+async def adjustment_analysis(db, filters=None):
+    analyzer = AdjustmentAnalyzer(db, filters)
     return await analyzer.run_all()
  
