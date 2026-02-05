@@ -1,14 +1,12 @@
 from loguru import logger
 from .base import BaseAnalyzer
-from .models import DataCount, CPT, CPTValidation
+from .models import CPT, CPTValidation
 import asyncio
  
 class CPTCodeAnalyzer(BaseAnalyzer):
    
     def __init__(self, db):
         super().__init__(db)
-        
-        
    
     async def get_cpt_overview(self):
         pipeline = [
@@ -166,27 +164,8 @@ class CPTCodeAnalyzer(BaseAnalyzer):
             }
        
         return {}
- 
-    async def check_invalid_cpt_format(self) -> DataCount:
-        pipeline = [
-            {"$unwind": "$charges"},
-            {"$match": {
-                "charges.cptHcpcs": {"$exists": True, "$ne": None, "$ne": ""}
-            }},
-            {"$project": {
-                "_id": 1,
-                "cptLength": {"$strLenCP": "$charges.cptHcpcs"}
-            }},
-            {"$match": {
-                "cptLength": {"$ne": 5}
-            }},
-            {"$group": {"_id": "$_id"}},
-            {"$count": "total"}
-        ]
-        
-        return await self.run_pipeline(pipeline)
 
-    async def check_invalid_modifier_codes(self) -> DataCount:
+    async def run_validation_checks(self):
         valid_modifiers = [
             "22", "25", "26", "50", "51", "52", "53", "59",
             "76", "77", "78", "79", "80", "81", "82",
@@ -198,56 +177,82 @@ class CPTCodeAnalyzer(BaseAnalyzer):
         
         pipeline = [
             {"$unwind": "$charges"},
-            {"$match": {
-                "charges.modifier": {
-                    "$exists": True,
-                    "$ne": None,
-                    "$ne": "",
-                    "$nin": valid_modifiers
+            {
+                "$facet": {
+                    "invalid_cpt_format": [
+                        {
+                            "$match": {
+                                "charges.cptHcpcs": {"$exists": True, "$ne": None, "$ne": ""}
+                            }
+                        },
+                        {
+                            "$project": {
+                                "_id": 1,
+                                "cptLength": {"$strLenCP": "$charges.cptHcpcs"}
+                            }
+                        },
+                        {"$match": {"cptLength": {"$ne": 5}}},
+                        {"$group": {"_id": "$_id"}},
+                        {"$count": "total"}
+                    ],
+                    "invalid_modifier_codes": [
+                        {
+                            "$match": {
+                                "charges.modifier": {
+                                    "$exists": True,
+                                    "$ne": None,
+                                    "$ne": "",
+                                    "$nin": valid_modifiers
+                                }
+                            }
+                        },
+                        {"$group": {"_id": "$_id"}},
+                        {"$count": "total"}
+                    ]
                 }
-            }},
-            {"$group": {"_id": "$_id"}},
-            {"$count": "total"}
+            }
         ]
         
-        return await self.run_pipeline(pipeline)
+        results = await self.aggregate(pipeline)
+        facet_result = results[0]
+        
+        return {
+            "invalid_cpt_format": self.facet_to_datacount(facet_result, "invalid_cpt_format"),
+            "invalid_modifier_codes": self.facet_to_datacount(facet_result, "invalid_modifier_codes")
+        }
 
     async def run_all(self):
-        logger.info("Starting CPT code analysis...")
         cpt_overview = await self.get_cpt_overview()
+        
         (
         top_cpt_codes,
         rare_cpt_codes,
         modifier_usage,
         financial_analysis,
         missing_cpt,
-        invalid_cpt_format,
-        invalid_modifier_codes
+        validation_results
         ) = await asyncio.gather(
         self.get_top_cpt_codes(cpt_overview["cpt_details"]),
         self.get_rare_cpt_codes(cpt_overview["cpt_details"]),
         self.analyze_modifier_usage(),
         self.analyze_cpt_financial(),
         self.check_missing_cpt_codes(),
-        self.check_invalid_cpt_format(),
-        self.check_invalid_modifier_codes()
-       )
-        logger.info("CPT code analysis completed")
-        return CPT(
-              cpt_overview=cpt_overview,
-              top_cpt_codes=top_cpt_codes,
-              rare_cpt_codes=rare_cpt_codes,
-              modifier_usage=modifier_usage,
-              financial_analysis=financial_analysis,
-              missing_cpt=missing_cpt,
-              issues=CPTValidation(
-              invalid_cpt_format=invalid_cpt_format,
-              invalid_modifier_codes=invalid_modifier_codes
-             )
+        self.run_validation_checks()
         )
         
-            
-            
+        return CPT(
+            cpt_overview=cpt_overview,
+            top_cpt_codes=top_cpt_codes,
+            rare_cpt_codes=rare_cpt_codes,
+            modifier_usage=modifier_usage,
+            financial_analysis=financial_analysis,
+            missing_cpt=missing_cpt,
+            issues=CPTValidation(
+                invalid_cpt_format=validation_results["invalid_cpt_format"],
+                invalid_modifier_codes=validation_results["invalid_modifier_codes"]
+            )
+        )
+
 async def cpt_analysis(db):
     analyzer = CPTCodeAnalyzer(db)
     return await analyzer.run_all()

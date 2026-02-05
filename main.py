@@ -11,7 +11,7 @@ from ai_core.data_quality.payer_analysis import payer_analysis
 from ai_core.data_quality.chargespattern_analysis import charges_analysis
 from ai_core.data_quality.claimsadjustments_analysis import adjustment_analysis
 from ai_core.data_quality.cpt_code_analysis import cpt_analysis
-from ai_core.data_quality.models import DataQualityResult, Overview 
+from ai_core.data_quality.models import DataQualityResult, Overview
 from ai_core.data_quality.diagnosis_analysis import diagnosis_analysis
 
 async def run_data_quality(db):
@@ -35,30 +35,65 @@ async def run_data_quality(db):
     logger.info("All analyses complete")
     
     overview = Overview(
-        total_claims=payer_data["total_claims"],
-        unique_payers=payer_data["unique_payers_count"],
-        unique_mcos=payer_data["unique_payers_count"],
+        total_claims=payer_data.total_claims,
+        unique_payers=payer_data.unique_payers_count,
         unique_cpt_codes=cpt_data.cpt_overview["unique_cpt_codes"]
     )
     
-    logger.info("Combining all results")
-    combined_result = DataQualityResult(
-        timestamp=datetime.now(),
-        version=1,
-        overview=overview,
-        payer=payer_data,
-        charges=charges_data,
-        cpt=cpt_data,
-        claims=claims_data,
-        adjustment=claims_adjustment_data,
-        diagnosis=diagnosis_data
-    )
+    current_time = datetime.now()
     
-    logger.info("Saving combined result to database")
-    await combined_result.insert()
+    logger.info("Creating seperate result documents")
+    documents_to_save = [
+        DataQualityResult(
+            timestamp=current_time,
+            version=1,
+            analysis_type="overview",
+            quality_check=overview
+        ),
+        DataQualityResult(
+            timestamp=current_time,
+            version=1,
+            analysis_type="diagnosis",
+            quality_check=diagnosis_data
+        ),
+        DataQualityResult(
+            timestamp=current_time,
+            version=1,
+            analysis_type="payer",
+            quality_check=payer_data
+        ),
+        DataQualityResult(
+            timestamp=current_time,
+            version=1,
+            analysis_type="charges",
+            quality_check=charges_data
+        ),
+        DataQualityResult(
+            timestamp=current_time,
+            version=1,
+            analysis_type="cpt",
+            quality_check=cpt_data
+        ),
+        DataQualityResult(
+            timestamp=current_time,
+            version=1,
+            analysis_type="claims",
+            quality_check=claims_data
+        ),
+        DataQualityResult(
+            timestamp=current_time,
+            version=1,
+            analysis_type="adjustment",
+            quality_check=claims_adjustment_data
+        )
+    ]
+    logger.info("Saving results as seperate documents to database")
+    for doc in documents_to_save:
+        await doc.insert()
+        logger.info(f" Saved {doc.analysis_type} analysis - Document ID: {doc.id}")
     
     logger.success("Data quality analysis complete!")
-    logger.info(f"Document ID: {combined_result.id}") 
+    logger.info(f"Total documents saved: {len(documents_to_save)}")
    
    
 async def run_checks(client):
