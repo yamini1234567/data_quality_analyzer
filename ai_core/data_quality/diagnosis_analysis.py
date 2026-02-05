@@ -323,9 +323,6 @@ class DiagnosisAnalyzer(BaseAnalyzer):
             Issues=Issues
        )
     
-        logger.info("Diagnosis analysis complete")
-        return diagnosis_result
-    
    
 async def diagnosis_analysis(db, filters=None):
     analyzer = DiagnosisAnalyzer(db, filters)
