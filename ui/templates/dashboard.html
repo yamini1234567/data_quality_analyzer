@@ -9,67 +9,76 @@
   </head>
   <body>
     <div class="header">
-      <h1>Data Quality Dashboard</h1>
-      <p class="timestamp">Last Analysis: {{ data.timestamp.strftime('%Y-%m-%d') }}</p>
+      <h1>Data Quality Framework</h1>
+      <p class="timestamp">Last Analysis: {{ timestamp.strftime('%Y-%m-%d %H:%M') if timestamp else 'N/A' }}</p>
     </div>
 
     <div class="container">
-      <!-- Overview Cards -->
+      <div class="payer-selector-card">
+        <h2>Select Payer</h2>
+        <form method="get" action="/" class="payer-form">
+        <select name="payer" id="payerSelect" class="payer-dropdown" onchange="this.form.submit()">
+            {% for payer in available_payers %}
+            <option value="{{ payer }}" {% if payer == selected_payer %}selected{% endif %}>
+                {{ payer }}
+            </option>
+            {% endfor %}
+        </select>
+        </form>
+      </div>
+
       <div class="overview-section">
         <h2>Overview</h2>
         <div class="stats-grid">
           <div class="stat-card">
-            <div class="stat-number">{{ "{:,}".format(data.overview.total_claims) }}</div>
+            <div class="stat-number">{{ "{:,}".format(overview.total_claims) if overview else 0 }}</div>
             <div class="stat-label">Total Claims</div>
           </div>
           <div class="stat-card warning">
             <div class="stat-number">{{ total_issue_types }}</div>
-            <div class="stat-label">Issue Types Found</div>
+            <div class="stat-label">Issues Found ({{ selected_payer }})</div>
           </div>
           <div class="stat-card">
-            <div class="stat-number">{{ data.overview.unique_cpt_codes }}</div>
+            <div class="stat-number">{{ overview.unique_cpt_codes if overview else 0 }}</div>
             <div class="stat-label">Unique CPT Codes</div>
           </div>
           <div class="stat-card">
-            <div class="stat-number">{{ data.overview.unique_payers }}</div>
+            <div class="stat-number">{{ overview.unique_payers if overview else 0 }}</div>
             <div class="stat-label">Unique Payers</div>
           </div>
         </div>
       </div>
 
-      <!-- Chart -->
       <div class="chart-section">
-        <h2>Issues by Module</h2>
+        <h2>Issues by Analysis ({{ selected_payer }})</h2>
         <div class="chart-container">
           <canvas id="moduleChart"></canvas>
         </div>
       </div>
 
-      <!-- Module Cards -->
       <div class="modules-section">
-        <h2>Data Quality Issues by Module</h2>
+        <h2>Data Quality Issues</h2>
 
         {% set modules = [
           {'name': 'claims', 'title': 'Claims'},
-          {'name': 'charges', 'title': 'Charges'},
           {'name': 'diagnosis', 'title': 'Diagnosis'},
           {'name': 'cpt', 'title': 'CPT'},
-          {'name': 'adjustment', 'title': 'Adjustments'}
+          {'name': 'adjustment', 'title': 'Adjustments'},
+          {'name': 'charges', 'title': 'Charges'}
         ] %}
 
         {% for module in modules %}
         <div class="module-card">
           <div class="module-header">
-            <span class="module-title">{{ module.title }} Module</span>
-            <span class="issue-count">{{ module_issue_types[module.name] }} Issue Types</span>
+            <span class="module-title">{{ module.title }} Analysis</span>
+            <span class="issue-count">{{ module_issue_types[module.name] }} Issues</span>
           </div>
-          <a href="/module/{{ module.name }}" class="btn">View Details →</a>
+          <a href="/module/{{ module.name }}?payer={{ selected_payer }}" class="btn">View Details →</a>
         </div>
         {% endfor %}
       </div>
     </div>
 
-    <!-- Chart Script -->
     <script>
       new Chart(document.getElementById('moduleChart'), {
         type: 'bar',
@@ -97,7 +106,7 @@
           responsive: true,
           maintainAspectRatio: false,
           scales: {
-            y: { beginAtZero: true }
+            y: { beginAtZero: true, ticks: { stepSize: 1 } }
           },
           plugins: {
             legend: { display: false }

@@ -2,6 +2,7 @@ DATABASE_NAME = "rcm_test_db"
 COLLECTION_NAME = "claims"
 
 RUN_CHECKS = False
-RUN_DATA_QUALITY = True
+RUN_DATA_QUALITY = False
+USE_NEW_VALIDATION = True 
 
 

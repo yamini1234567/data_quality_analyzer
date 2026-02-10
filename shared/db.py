@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from loguru import logger
 from ai_core.feature_readiness.appsettings import MAppSettings
 from ai_core.data_quality.models import DataQualityResult
+from ai_core.shared.models import MQuery, MResult
 
 load_dotenv()
 
@@ -59,14 +60,17 @@ async def init_db():
         database=db, 
         document_models=[
             MAppSettings,
-            DataQualityResult
+            DataQualityResult,
+            MQuery,
+            MResult
         ]
     )
     
-    logger.info(f"Database initialized: {db.name}")
-    logger.info(f"Initialized 2 model(s):")
+    logger.info(f"Initialized 4 model(s):")
     logger.info(" - MAppSettings")
     logger.info(" - DataQualityResult")
+    logger.info(" - MQuery")
+    logger.info(" - MResult")
     
     return client, db
 

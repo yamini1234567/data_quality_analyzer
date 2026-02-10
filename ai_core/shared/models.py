@@ -9,7 +9,9 @@ class QueryType(StrEnum):
     charge = "charge"
     diagnosis = "diagnosis"
     adjustment = "adjustment"
-    payment = "payment"
+    cpt= "cpt"
+    claim = "claim"
+    
 
 
 class Priority(IntEnum):
@@ -38,7 +40,7 @@ class Result(BaseModel):
     query_name: str
     status: str
     executed_at: datetime
-
+    filters: Optional[str] = None
     result: dict | list[dict]
     error: Optional[str] = None
 

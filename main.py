@@ -3,6 +3,7 @@ from loguru import logger
 from datetime import datetime
 from shared.db import init_db, close_db
 import config
+from ai_core.shared.validator import Validator
 from ai_core.feature_readiness.checks.additional_charge_checks import AdditionalChargeReadinessCheck
 from ai_core.feature_readiness.checks.charge_analysis_checks import ChargeAnalysisReadinessCheck
 from ai_core.feature_readiness.base_standalone import CheckStatus
@@ -14,9 +15,16 @@ from ai_core.data_quality.cpt_code_analysis import cpt_analysis
 from ai_core.data_quality.models import DataQualityResult, Overview
 from ai_core.data_quality.diagnosis_analysis import diagnosis_analysis
  
-async def run_data_quality(db):
-    logger.info("Data Quality Analysis")
+async def run_new_validation(db):
+    validator = Validator(db)
+    payers = await db.claims.distinct("payerMCO")
     
+    for i, payer in enumerate(payers, 1):
+        logger.info(f"[{i}/{len(payers)}] Validating: {payer}")
+        await validator.run_validation(filters={'payer': payer})
+    
+    
+async def run_data_quality(db):
     current_time = datetime.now()
     
     total_claims = await db.claims.count_documents({})
@@ -29,7 +37,6 @@ async def run_data_quality(db):
         unique_cpt_codes=len(unique_cpts)
     )
     
-    # Saving overview document
     overview_document = DataQualityResult(
         timestamp=current_time,
         version=1,
@@ -37,12 +44,8 @@ async def run_data_quality(db):
         quality_check=overview
     )
     await overview_document.insert()
-    logger.success(f"Saved overview - ID: {overview_document.id}")
     
-    logger.info("Running payer analysis...")
     payer_data = await payer_analysis(db)  
-    
-    # Saving payer document
     payer_document = DataQualityResult(
         timestamp=current_time,
         version=1,
@@ -50,15 +53,9 @@ async def run_data_quality(db):
         quality_check=payer_data
     )
     await payer_document.insert()
-    logger.success(f"Saved payer - ID: {payer_document.id}")
     
-    
-    logger.info(f"Found {len(payers)} payers")
-    
-    for i in range(len(payers)):
-        payer = payers[i]
-        
-        logger.info(f"\nAnalyzing payer {i+1}/{len(payers)}: {payer}")
+    for i, payer in enumerate(payers, 1):
+        logger.info(f"[{i}/{len(payers)}] Analyzing: {payer}")
         
         filters = {'payer': payer}
         
@@ -76,10 +73,6 @@ async def run_data_quality(db):
             diagnosis_analysis(db, filters)
         )
         
-        logger.info("All analyses complete")
-        
-      
-        logger.info("Creating separate result documents")
         documents_to_save = [
             DataQualityResult(
                 timestamp=current_time,
@@ -118,54 +111,38 @@ async def run_data_quality(db):
             )
         ]
         
-        logger.info("Saving results as separate documents to database")
         for doc in documents_to_save:
             await doc.insert()
-            logger.info(f"  Saved {doc.analysis_type} analysis - Document ID: {doc.id}")
-        
-        logger.success(f"✅ Completed {payer} - Saved {len(documents_to_save)} documents")
-    # ✅ LOOP ENDS HERE
-    
-    logger.success(f"Data quality analysis complete! Processed {len(payers)} payers")
    
    
 async def run_checks(client):
-    logger.info("RUNNING CHECKS FOLDER")
-   
-    logger.info("\nAdditional Charge checks...")
     checker1 = AdditionalChargeReadinessCheck(client, config.DATABASE_NAME, config.COLLECTION_NAME)
     results1 = await checker1.run_checks(source_name=config.DATABASE_NAME)
     passed1 = sum(1 for r in results1 if r.status == CheckStatus.passed)
-    logger.info(f"Result: {passed1}/{len(results1)} passed")
    
-    logger.info("\nCharge Analysis checks...")
     checker2 = ChargeAnalysisReadinessCheck(client, config.DATABASE_NAME, config.COLLECTION_NAME)
     results2 = await checker2.run_checks(source_name=config.DATABASE_NAME)
     passed2 = sum(1 for r in results2 if r.status == CheckStatus.passed)
-    logger.info(f"Result: {passed2}/{len(results2)} passed")
    
     total = len(results1) + len(results2)
     passed = passed1 + passed2
     score = (passed / total * 100) if total > 0 else 0
-    logger.info(f"\nChecks complete: {score:.1f}% ({passed}/{total})")
+    logger.info(f"Checks: {score:.1f}% ({passed}/{total})")
+ 
  
 async def main():
- 
-    logger.info("Data quality analyzer")
-   
-    logger.info("Connecting to database")
     client, db = await init_db()
-    logger.info("Database Connected")
    
     if config.RUN_CHECKS:
         await run_checks(client)
    
     if config.RUN_DATA_QUALITY:
         await run_data_quality(db)
+        
+    if config.USE_NEW_VALIDATION:
+        await run_new_validation(db)
    
     await close_db(client)
  
  
 asyncio.run(main())
- 
- 

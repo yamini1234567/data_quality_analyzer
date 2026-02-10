@@ -3,19 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{{ issue_name | replace('_', ' ') | title }}</title>
+    <title>{{ issue_name | replace('_', ' ') | title }} - {{ selected_payer }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
   </head>
   <body>
     <div class="header">
       <h1>{{ issue_name | replace('_', ' ') | title }}</h1>
-      <a href="/module/{{ module_name }}" class="back-link">
-        ← Back to {{ module_name | title }} Module
+      <p class="timestamp">Payer: {{ selected_payer }}</p>
+      <a href="/module/{{ module_name }}?payer={{ selected_payer }}" class="back-link">
+        ← Back to {{ module_name | title }} Analysis
       </a>
     </div>
 
     <div class="container">
-      <!-- Summary -->
+      <div class="payer-selector-card">
+          <form method="get" class="payer-form">
+              <label for="payerSelect">Change Payer:</label>
+              <select name="payer" id="payerSelect" class="payer-dropdown" onchange="this.form.submit()">
+                  {% for payer in available_payers %}
+                  <option value="{{ payer }}" {% if payer == selected_payer %}selected{% endif %}>
+                      {{ payer }}
+                  </option>
+                  {% endfor %}
+              </select>
+          </form>
+      </div>
+
       <div class="detail-summary">
         <h2>Summary</h2>
         <div class="summary-grid">
@@ -25,21 +38,19 @@
           </div>
           <div class="summary-item">
             <span class="label">Percentage:</span>
-            <span class="value">{{ issue_data.percentage }}%</span>
+            <span class="value">{{ "%.2f"|format(issue_data.percentage) }}%</span>
           </div>
         </div>
       </div>
 
-      <!-- Examples Table -->
       <div class="examples-section">
-        <h2>Examples from Your Data</h2>
+        <h2>Data for Payer - {{ selected_payer }}</h2>
 
         {% if examples %}
         <div class="table-container">
           <table class="data-table">
             <thead>
               <tr>
-                <!-- Claims Module Columns -->
                 {% if module_name == "claims" %}
                   <th>Claim ID</th>
                   <th>Status</th>
@@ -48,7 +59,6 @@
                   <th>Adjustment</th>
                   <th>Payer</th>
 
-                <!-- Charges Module Columns -->
                 {% elif module_name == "charges" %}
                   <th>Claim ID</th>
                   <th>CPT Code</th>
@@ -57,16 +67,31 @@
                   <th>Paid</th>
                   <th>Adjustment</th>
                   <th>Units</th>
+                  <th>Unit Price</th>
+                  {% if issue_name == 'charge_remittance_details_missing' %}
+                  <th>Remittances</th>
+                  {% endif %}
+                  {% if issue_name == 'charges_with_empty_description' %}
+                  <th>Description</th>
+                  {% endif %}
 
-                <!-- Diagnosis Module Columns -->
                 {% elif module_name == "diagnosis" %}
                   <th>Claim ID</th>
                   <th>Code</th>
                   <th>Description</th>
                   <th>Status</th>
                   <th>Type</th>
+                  {% if issue_name in ['order_mismatch', 'primary_diagnosis_not_order_1', 'duplicate_order', 'missing_order'] %}
+                  <th>Order</th>
+                  <th>Is Primary</th>
+                  {% endif %}
+                  {% if issue_name == 'missing_occurrence_date' %}
+                  <th>Occurrence Date</th>
+                  {% endif %}
+                  {% if issue_name == 'missing_present_on_admission' %}
+                  <th>Present On Admission</th>
+                  {% endif %}
 
-                <!-- CPT Module Columns -->
                 {% elif module_name == "cpt" %}
                   <th>Claim ID</th>
                   <th>CPT Code</th>
@@ -75,7 +100,6 @@
                   <th>Amount</th>
                   <th>Units</th>
 
-                <!-- Adjustment Module Columns -->
                 {% elif module_name == "adjustment" %}
                   <th>Claim ID</th>
                   <th>Claim Amount</th>
@@ -90,7 +114,6 @@
             <tbody>
               {% for example in examples[:10] %}
               <tr>
-                <!-- Claims Module Data -->
                 {% if module_name == "claims" %}
                   <td>{{ example._id }}</td>
                   <td><span class="status-badge">{{ example.claimStatus }}</span></td>
@@ -99,7 +122,6 @@
                   <td>${{ "{:,.2f}".format(example.claimAdjAmount) }}</td>
                   <td>{{ example.payerMCO }}</td>
 
-                <!-- Charges Module Data -->
                 {% elif module_name == "charges" %}
                   <td>{{ example._id }}</td>
                   <td>{{ example.charges.cptHcpcs }}</td>
@@ -108,16 +130,31 @@
                   <td>${{ "{:,.2f}".format(example.charges.amountPaid or 0) }}</td>
                   <td>${{ "{:,.2f}".format(example.charges.adjustmentAmount or 0) }}</td>
                   <td>{{ example.charges.unit }}</td>
+                  <td>{{ "${:,.2f}".format(example.charges.unitPrice) if example.charges.unitPrice else 'Missing' }}</td>
+                  {% if issue_name == 'charge_remittance_details_missing' %}
+                  <td>{{ example.charges.chargeRemittances|length if example.charges.chargeRemittances else 0 }} records</td>
+                  {% endif %}
+                  {% if issue_name == 'charges_with_empty_description' %}
+                  <td>{{ example.charges.description if example.charges.description else 'Empty' }}</td>
+                  {% endif %}
 
-                <!-- Diagnosis Module Data -->
                 {% elif module_name == "diagnosis" %}
                   <td>{{ example._id }}</td>
                   <td>{{ example.diagnoses.code }}</td>
                   <td>{{ example.diagnoses.description }}</td>
                   <td>{{ example.diagnoses.status }}</td>
                   <td>{{ example.diagnoses.type }}</td>
+                  {% if issue_name in ['order_mismatch', 'primary_diagnosis_not_order_1', 'duplicate_order', 'missing_order'] %}
+                  <td>{{ example.diagnoses.order if example.diagnoses.order else 'N/A' }}</td>
+                  <td>{{ example.diagnoses.isPrimaryDiagnosis if example.diagnoses.isPrimaryDiagnosis is defined else 'False' }}</td>
+                  {% endif %}
+                  {% if issue_name == 'missing_occurrence_date' %}
+                  <td>{{ example.diagnoses.diagnosisOccurenceDate if example.diagnoses.diagnosisOccurenceDate else 'Missing' }}</td>
+                  {% endif %}
+                  {% if issue_name == 'missing_present_on_admission' %}
+                  <td>{{ example.diagnoses.presentOnAdmission if example.diagnoses.presentOnAdmission else 'Missing' }}</td>
+                  {% endif %}
 
-                <!-- CPT Module Data -->
                 {% elif module_name == "cpt" %}
                   <td>{{ example._id }}</td>
                   <td>{{ example.charges.cptHcpcs }}</td>
@@ -126,7 +163,6 @@
                   <td>${{ "{:,.2f}".format(example.charges.amount) }}</td>
                   <td>{{ example.charges.unit }}</td>
 
-                <!-- Adjustment Module Data -->
                 {% elif module_name == "adjustment" %}
                   <td>{{ example._id }}</td>
                   <td>${{ "{:,.2f}".format(example.claimAmount) }}</td>
@@ -149,10 +185,10 @@
         </div>
 
         <p class="example-count">
-          Showing {{ [examples|length, 10]|min }} of {{ issue_data.count }} affected claims
+          Showing {{ [examples|length, 10]|min }} of {{ issue_data.count }} affected claims for {{ selected_payer }}
         </p>
         {% else %}
-        <p class="no-data">No examples available for this issue.</p>
+        <p class="no-data">No examples available for this issue and payer.</p>
         {% endif %}
       </div>
     </div>
