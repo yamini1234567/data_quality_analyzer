@@ -135,4 +135,6 @@ class PayerAnalyzer(BaseAnalyzer):
 
 async def payer_analysis(db, filters=None):
     analyzer = PayerAnalyzer(db, filters)
-    return await analyzer.run_all()
+    result = await analyzer.run_all()
+    await analyzer.save_result("payer", result)
+    return result

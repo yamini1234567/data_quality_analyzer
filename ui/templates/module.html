@@ -3,41 +3,184 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ module_name | title }} Module</title>
+    <title>{{ module_name | title }} Analysis - {{ selected_payer }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="header">
-        <h1>{{ module_name | title }} Module</h1>
-        <a href="/" class="back-link">← Back to Dashboard</a>
+        <h1>{{ module_name | title }} Analysis - {{ selected_payer }}</h1>
+        <a href="/?payer={{ selected_payer }}" class="back-link">← Back to Dashboard</a>
     </div>
 
     <div class="container">
-        <!-- Summary -->
-        <div class="summary-box">
-            <p><strong>Total Claims:</strong> {{ "{:,}".format(total_claims) }}</p>
-            <p><strong>Issues Found:</strong> {{ issues | length }} types</p>
+        <div class="payer-selector-card">
+            <form method="get" class="payer-form">
+                <label for="payerSelect">Change Payer:</label>
+                <select name="payer" id="payerSelect" class="payer-dropdown" onchange="this.form.submit()">
+                    {% for payer in available_payers %}
+                    <option value="{{ payer }}" {% if payer == selected_payer %}selected{% endif %}>
+                        {{ payer }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </form>
         </div>
 
-        <!-- Issues List -->
-        <div class="issues-section">
-            <h2>Issues</h2>
-            
-            {% for issue_name, issue_data in issues.items() %}
-            <div class="issue-card">
-                <div class="issue-header">
-                    <h3>{{ issue_name | replace('_', ' ') | title }}</h3>
-                    <span class="issue-badge">{{ issue_data.count }} claims</span>
+        <div class="summary-box">
+            <p><strong>Payer:</strong> {{ selected_payer }}</p>
+            <p><strong>Total Claims:</strong> {{ "{:,}".format(total_claims) }}</p>
+            <p><strong>Issues Found:</strong> {{ non_zero_issue_count }} types ({{ issues | length }} total checks)</p>
+        </div>
+
+        {% if module_name == 'charges' and statistics %}
+        <div class="overview-section">
+            <h2>Charge Statistics</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number">${{ "{:,.2f}".format(statistics.total_charges) }}</div>
+                    <div class="stat-label">Total Charges</div>
                 </div>
-                <div class="issue-body">
-                    <p><strong>{{ issue_data.percentage }}%</strong> affected</p>
-                    <a href="/issue/{{ module_name }}/{{ issue_name }}" class="btn-small">
-                        View Examples →
-                    </a>
+                <div class="stat-card">
+                    <div class="stat-number">${{ "{:,.2f}".format(statistics.avg_charge) }}</div>
+                    <div class="stat-label">Average Charge</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">{{ "{:,}".format(statistics.count) }}</div>
+                    <div class="stat-label">Total Charge Records</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${{ "{:,.2f}".format(statistics.max_charge) }}</div>
+                    <div class="stat-label">Highest Charge</div>
                 </div>
             </div>
-            {% endfor %}
         </div>
+
+        {% if ranges %}
+        <div class="chart-section">
+            <h2>Charge Distribution by Range</h2>
+            <div class="chart-container">
+                <canvas id="chargeRangeChart"></canvas>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if high_value and low_value %}
+        <div class="overview-section">
+            <h2>Value Analysis</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number">{{ high_value.count }}</div>
+                    <div class="stat-label">High Value Charges</div>
+                </div>
+                <div class="stat-card warning">
+                    <div class="stat-number">{{ low_value.very_low_count }}</div>
+                    <div class="stat-label">Very Low Value ({{ "{:.2f}".format(low_value.very_low_percentage) }}%)</div>
+                </div>
+                <div class="stat-card warning">
+                    <div class="stat-number">{{ low_value.low_count }}</div>
+                    <div class="stat-label">Low Value ({{ "{:.2f}".format(low_value.low_percentage) }}%)</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        {% endif %}
+
+        <div class="issues-section">
+            <h2>Data Quality Issues</h2>
+            
+            {% if issues %}
+                {% set has_issues = namespace(found=false) %}
+                {% for issue_name, issue_data in issues.items() %}
+                    {% if issue_data.count > 0 %}
+                        {% set has_issues.found = true %}
+                        <div class="issue-card">
+                            <div class="issue-header">
+                                <h3>{{ issue_name | replace('_', ' ') | title }}</h3>
+                                <span class="issue-badge">{{ issue_data.count }} claims</span>
+                            </div>
+                            <div class="issue-body">
+                                <p><strong>{{ "%.2f"|format(issue_data.percentage) }}%</strong> affected</p>
+                                <a href="/issue/{{ module_name }}/{{ issue_name }}?payer={{ selected_payer }}" class="btn-small">
+                                    View Data →
+                                </a>
+                            </div>
+                        </div>
+                    {% endif %}
+                {% endfor %}
+                
+                {% if not has_issues.found %}
+                    <p class="no-data">✅ No issues found for this module and payer - Data quality is good!</p>
+                {% endif %}
+            {% else %}
+                <p class="no-data">No data available for this module.</p>
+            {% endif %}
+        </div>
+
+        <details class="zero-issues-section">
+            <summary class="zero-issues-summary">
+                Show all checks ({{ issues | length - non_zero_issue_count }} with 0 issues)
+            </summary>
+            <div class="zero-issues-list">
+                {% for issue_name, issue_data in issues.items() %}
+                    {% if issue_data.count == 0 %}
+                        <div class="zero-issue-item">
+                            <span class="check-name">{{ issue_name | replace('_', ' ') | title }}</span>
+                            <span class="check-status">✓ No issues</span>
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </details>
     </div>
+
+    {% if module_name == 'charges' and ranges %}
+    <script>
+        const ranges = {{ ranges | tojson }};
+        
+        new Chart(document.getElementById('chargeRangeChart'), {
+            type: 'bar',
+            data: {
+                labels: ranges.map(r => r.range),
+                datasets: [{
+                    label: 'Number of Charges',
+                    data: ranges.map(r => r.count),
+                    backgroundColor: 'rgba(0, 217, 255, 0.6)',
+                    borderColor: 'rgba(0, 217, 255, 1)',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { 
+                        beginAtZero: true,
+                        ticks: { color: '#B8C5D6' },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                    },
+                    x: {
+                        ticks: { color: '#B8C5D6' },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const range = ranges[context.dataIndex];
+                                return [
+                                    `Count: ${context.parsed.y}`,
+                                    `Percentage: ${range.percentage.toFixed(2)}%`
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+    {% endif %}
 </body>
 </html>

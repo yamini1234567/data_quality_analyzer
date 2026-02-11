@@ -2,6 +2,7 @@ from loguru import logger
 from .base import BaseAnalyzer
 from .models import CPT, CPTValidation
 import asyncio
+from ai_core.feature_readiness.appsettings import get_app_settings
  
 class CPTCodeAnalyzer(BaseAnalyzer):
    
@@ -168,14 +169,8 @@ class CPTCodeAnalyzer(BaseAnalyzer):
         return {}
 
     async def run_validation_checks(self):
-        valid_modifiers = [
-            "22", "25", "26", "50", "51", "52", "53", "59",
-            "76", "77", "78", "79", "80", "81", "82",
-            "AA", "GA", "GC", "GY", "GZ",
-            "JW", "JZ",
-            "LT", "RT", "LC", "LD",
-            "TC", "QW", "QX", "QY", "QZ"
-        ]
+        settings = await get_app_settings()
+        valid_modifiers = settings.validation_settings.valid_cpt_modifiers
         
         pipeline = [
             {"$unwind": "$charges"},
@@ -257,4 +252,6 @@ class CPTCodeAnalyzer(BaseAnalyzer):
 
 async def cpt_analysis(db, filters=None):
     analyzer = CPTCodeAnalyzer(db, filters)
-    return await analyzer.run_all()
+    result = await analyzer.run_all()
+    await analyzer.save_result("cpt_codes", result)
+    return result

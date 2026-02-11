@@ -1,6 +1,6 @@
 from loguru import logger
 from .base import BaseAnalyzer
-from .models import DataCount, Charges, ChargeValidation
+from .models import Charges, ChargeValidation
 from datetime import datetime, timedelta
 import asyncio
  
@@ -447,5 +447,7 @@ class ChargesAnalyzer(BaseAnalyzer):
         
 async def charges_analysis(db, filters=None):
     analyzer = ChargesAnalyzer(db, filters)
-    return await analyzer.run_all()
+    result = await analyzer.run_all()
+    await analyzer.save_result("charges", result)
+    return result
 

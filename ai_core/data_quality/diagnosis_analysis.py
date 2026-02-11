@@ -326,4 +326,6 @@ class DiagnosisAnalyzer(BaseAnalyzer):
    
 async def diagnosis_analysis(db, filters=None):
     analyzer = DiagnosisAnalyzer(db, filters)
-    return await analyzer.run_all()
+    result = await analyzer.run_all()
+    await analyzer.save_result("diagnosis", result)
+    return result
