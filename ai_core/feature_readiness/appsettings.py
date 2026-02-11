@@ -1,160 +1,93 @@
-"""
-Application Settings for Data Quality Analyzer
-
-Defines the structure of app_settings document stored in MongoDB. 
-Following Satya's pattern for centralized configuration.
-"""
-
 from typing import List
 from pydantic import BaseModel, Field
 from beanie import Document
 
-# STATS SETTINGS 
 
 class StatsSettings(BaseModel):
-    """Data field mappings for MongoDB queries"""
-    
     payer_field: str = Field(
         default="payerMCO",
         description="Field name for payer in claims data"
     )
-    
-# AI SUGGESTION SETTINGS 
 
 
 class Prompt(BaseModel):
-    """AI prompt definition"""
-    
     name: str = Field(description="Prompt identifier")
     prompt: str = Field(description="Prompt text")
 
 
 class ChargeAnalysisPromptSettings(BaseModel):
-    """Prompts for charge analysis AI"""
-    
-    prompts:  List[Prompt] = Field(
+    prompts: List[Prompt] = Field(
         default_factory=list,
         description="List of AI prompts"
     )
 
 
 class AISuggestionSettings(BaseModel):
-    """Settings for AI features"""
-    
     charge_analysis: ChargeAnalysisPromptSettings = Field(
         default_factory=ChargeAnalysisPromptSettings,
         description="Charge analysis AI settings"
     )
 
-# READINESS CHECK SETTINGS 
+
+class ValidationSettings(BaseModel):
+    valid_cpt_modifiers: List[str] = Field(
+        default=[
+            "22", "24", "25", "26", "27", "32", "33", "47",
+            "50", "51", "52", "53", "54", "55", "56", "57", "58", "59",
+            "62", "66", "73", "74", "76", "77", "78", "79",
+            "80", "81", "82", "90", "91", "95", "99",
+            "AA", "GA", "GC", "GT", "GY", "GZ",
+            "JW", "JZ",
+            "LT", "RT", "LC", "LD",
+            "TC", "QW", "QX", "QY", "QZ",
+            "XE", "XP", "XS", "XU"
+        ],
+        description="List of valid CPT modifier codes"
+    )
+
 
 class ReadinessCheckSettings(BaseModel):
-    """Thresholds for feature readiness checks"""
-    
-    claims_with_charges_threshold:  int = Field(
-        default=10,
-        description="Minimum claims with charges (Check 1)"
-    )
-    
-    cpt_diversity_threshold: int = Field(
-        default=5,
-        description="Minimum unique CPT codes (Check 2)"
-    )
-    
-    claims_minimum_total:  int = Field(
-        default=100,
-        description="Minimum total number of claims required for analysis"
-    )
-    
-    claims_with_charges_percentage: float = Field(
-        default=0.8,
-        ge=0.0,
-        le=1.0,
-        description="Minimum % of claims that must have charges with CPT codes (0. 0-1.0)"
-    )
-    
-    claims_with_diagnoses_percentage: float = Field(
-        default=0.7,
-        ge=0.0,
-        le=1.0,
-        description="Minimum % of claims that must have diagnoses with codes (0.0-1.0)"
-    )
-    
-    cpt_minimum_unique_codes: int = Field(
-        default=5,
-        description="Minimum number of unique CPT codes required for diversity"
-    )
-    
-    
-    stats_coverage_threshold: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
-        description="Minimum % of CPT codes with sufficient stats (0.0-1.0)"
-    )
-    
-    stats_minimum_record_count: int = Field(
-        default=3,
-        description="Minimum record_count for a CPT/payer combo to be considered valid"
-    )
-    
-    stats_minimum_cpts_per_payer: int = Field(
-        default=3,
-        description="Minimum number of CPT codes per payer with sufficient stats"
-    )
-    
-    stats_minimum_avg_record_count: float = Field(
-        default=5.0,
-        description="Minimum average record_count across all stats documents"
-    )
-    
-    stats_maximum_staleness_days: int = Field(
-        default=30,
-        description="Maximum age (in days) of most recent stats update"
-    )
-      
-    cdm_coverage_threshold: float = Field(
-        default=0.3,
-        ge=0.0,
-        le=1.0,
-        description="Minimum CDM coverage percentage (Check 4)"
-    )
-    
-    data_quality_threshold: float = Field(
-        default=0.8,
-        ge=0.0,
-        le=1.0,
-        description="Minimum data quality percentage (Check 5)"
-    )
+    claims_with_charges_threshold: int = Field(default=10)
+    cpt_diversity_threshold: int = Field(default=5)
+    claims_minimum_total: int = Field(default=100)
+    claims_with_charges_percentage: float = Field(default=0.8, ge=0.0, le=1.0)
+    claims_with_diagnoses_percentage: float = Field(default=0.7, ge=0.0, le=1.0)
+    cpt_minimum_unique_codes: int = Field(default=5)
+    stats_coverage_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    stats_minimum_record_count: int = Field(default=3)
+    stats_minimum_cpts_per_payer: int = Field(default=3)
+    stats_minimum_avg_record_count: float = Field(default=5.0)
+    stats_maximum_staleness_days: int = Field(default=30)
+    cdm_coverage_threshold: float = Field(default=0.3, ge=0.0, le=1.0)
+    data_quality_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
 
-#  APP SETTINGS
+
+class DataQualitySettings(BaseModel):
+    database_name: str = Field(default="rcm_test_db")
+    collection_name: str = Field(default="claims")
+    run_checks: bool = Field(default=False)
+    run_data_quality: bool = Field(default=False)
+    use_new_validation: bool = Field(default=True)
 
 
 class AppSettings(BaseModel):
-    """Application-wide settings"""
-    
-    stats_settings: StatsSettings = Field(
-        default_factory=StatsSettings,
-        description="Data field mappings"
-    )
-    
-    readiness_settings: ReadinessCheckSettings = Field(
-        default_factory=ReadinessCheckSettings,
-        description="Readiness check thresholds"
-    )
-    
-    ai_suggestion_settings:  AISuggestionSettings = Field(
-        default_factory=AISuggestionSettings,
-        description="AI feature settings"
-    )
+    stats_settings: StatsSettings = Field(default_factory=StatsSettings)
+    readiness_settings: ReadinessCheckSettings = Field(default_factory=ReadinessCheckSettings)
+    ai_suggestion_settings: AISuggestionSettings = Field(default_factory=AISuggestionSettings)
+    validation_settings: ValidationSettings = Field(default_factory=ValidationSettings)
+    data_quality_settings: DataQualitySettings = Field(default_factory=DataQualitySettings)
 
-# BEANIE DOCUMENT 
 
 class MAppSettings(Document, AppSettings):
-    """MongoDB document for application settings"""
-    
     class Settings: 
         name = "app_settings"
+
+
+async def get_app_settings() -> MAppSettings:
+    settings = await MAppSettings.find_one()
     
-    class Config:
-        arbitrary_types_allowed = True
+    if not settings:
+        settings = MAppSettings()
+        await settings.insert()
+    
+    return settings

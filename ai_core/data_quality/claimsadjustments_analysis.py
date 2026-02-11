@@ -173,4 +173,6 @@ class AdjustmentAnalyzer(BaseAnalyzer):
  
 async def adjustment_analysis(db, filters=None):
     analyzer = AdjustmentAnalyzer(db, filters)
-    return await analyzer.run_all()
+    result = await analyzer.run_all()
+    await analyzer.save_result("adjustments", result)
+    return result

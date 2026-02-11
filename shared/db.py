@@ -20,21 +20,19 @@ def get_database_name() -> str:
 
 def get_mongo_client() -> AsyncIOMotorClient:
     uri = get_mongo_uri()
-    logger.info(f"Creating MongoDB client: {uri}")
     return AsyncIOMotorClient(uri)
 
 
 def get_database(client: AsyncIOMotorClient, db_name: str = None):
     if db_name is None:
         db_name = get_database_name()
-    logger.info(f"Using database: {db_name}")
     return client[db_name]
 
 
 async def test_connection(client: AsyncIOMotorClient) -> bool:
     try:
         await client.admin.command('ping')
-        logger.info("MongoDB connection successful")
+        logger.info("MongoDB connected")
         return True
     except Exception as e:
         logger.error(f"MongoDB connection failed: {e}")
@@ -42,20 +40,13 @@ async def test_connection(client: AsyncIOMotorClient) -> bool:
 
 
 async def init_db():
-    logger.info("DATABASE INITIALIZATION")
-    
-    logger.info("Creating MongoDB client")
     client = get_mongo_client()
     
-    logger.info("Testing connection")
     if not await test_connection(client):
         raise Exception("Failed to connect to MongoDB")
     
-    logger.info("Getting database...")
     db = get_database(client, "rcm_test_db")
     
-    logger.info("Initializing Beanie models")
-
     await init_beanie(
         database=db, 
         document_models=[
@@ -66,17 +57,14 @@ async def init_db():
         ]
     )
     
-    logger.info(f"Initialized 4 model(s):")
-    logger.info(" - MAppSettings")
-    logger.info(" - DataQualityResult")
-    logger.info(" - MQuery")
-    logger.info(" - MResult")
+    logger.info("Database initialized")
     
     return client, db
 
 
 async def close_db(client: AsyncIOMotorClient):
+    
     if client:
-        logger.info("Closing database connection")
         client.close()
-        logger.info("Database connection closed")
+        
+        

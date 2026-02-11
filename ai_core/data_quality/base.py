@@ -1,4 +1,5 @@
-from ai_core.data_quality.models import DataCount
+from ai_core.data_quality.models import DataCount, DataQualityResult
+from datetime import datetime
 from abc import ABC, abstractmethod 
 
 class BaseAnalyzer(ABC):
@@ -7,9 +8,11 @@ class BaseAnalyzer(ABC):
         self.db = db
         self.claims = db["claims"]
         self.total_claims = 0
+        self.payer = None
     
         if filters and 'payer' in filters:
             self.filter = {'payerMCO': filters['payer']}
+            self.payer = filters['payer']
         else:
             self.filter = {}
         
@@ -35,6 +38,17 @@ class BaseAnalyzer(ABC):
         percentage = round((count / base * 100), 4) if base > 0 else 0.0
         return DataCount(count=count, percentage=percentage)
     
+    async def save_result(self, analysis_type, quality_check):
+        doc = DataQualityResult(
+            timestamp=datetime.now(),
+            version=1,
+            payer=self.payer,
+            analysis_type=analysis_type,
+            quality_check=quality_check
+        )
+        await doc.insert()
+        return doc
+    
     @abstractmethod
     async def run_all(self):
         pass
@@ -44,3 +58,5 @@ class BaseAnalyzer(ABC):
             pipeline = [{'$match': self.filter}] + pipeline
         
         return await self.claims.aggregate(pipeline).to_list(None)
+    
+    

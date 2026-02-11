@@ -292,6 +292,8 @@ class ClaimsAnalyzer(BaseAnalyzer):
             issues=issues
         )
 
-async def claims_analysis(db, filters=None) -> Claims_info:
+async def claims_analysis(db, filters=None):
     analyzer = ClaimsAnalyzer(db, filters)
-    return await analyzer.run_all()
+    result = await analyzer.run_all()
+    await analyzer.save_result("claims", result)
+    return result

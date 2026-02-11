@@ -1,3 +1,4 @@
+import asyncio
 from loguru import logger
 from datetime import datetime
 from .models import MQuery, MResult
@@ -10,8 +11,10 @@ class Validation:
         self.db = db
         self.executor = PipelineExecutor(db)
         self.claims = db["claims"]
+        self.max_concurrent = 10
    
     async def fetch_queries(self, qtype, priority):
+       
         query_filter = {"is_active": True}
        
         if qtype:
@@ -21,67 +24,56 @@ class Validation:
             query_filter["priority"] = priority
        
         queries = await MQuery.find(query_filter).sort("priority").to_list()
-       
         return queries
    
-    async def count_total_claims(self, filters):
-        match = {}
-        if filters and 'payer' in filters:
-            match = {'payerMCO': filters['payer']}
-   
-        total = await self.claims.count_documents(match)
-       
+    async def count_total_claims(self):
+        total = await self.claims.count_documents({})
         return total
    
-    async def _save_result(self, query_name, count, percentage, filters):
-        payer = None
-        if filters and 'payer' in filters:
-            payer = filters['payer']
-       
+    def get_count(self, results):
+        if not results:
+            return 0
+        first = results[0]
+        return first.get("total") or first.get("count") or len(results)
+   
+    async def save_result(self, query_name, count, percentage):
         result = MResult(
             query_name=query_name,
             status="success",
             executed_at=datetime.now(),
             result={"count": count, "percentage": percentage},
-            filters=payer,
+            filters=None,
             error=None
         )
-       
         await result.insert()
-       
         logger.debug(f"Saved result for {query_name}")
    
-    async def run_validations(self, qtype=None, priority=None, filters=None):
-        logger.info("Starting validations")
-       
-        queries = await self.fetch_queries(qtype, priority)
-       
-       
-        total_claims = await self.count_total_claims(filters)
-        logger.info(f"Total claims: {total_claims}")
-       
-        results = []
-        for query in queries:
+    async def run_single_validation(self, query, total_claims, semaphore):
+        async with semaphore:
             logger.info(f"Running: {query.name}")
            
-            exec_result = await self.executor.execute(query, filters)
+            results = await self.executor.execute(query)
+            count = self.get_count(results)
+            percentage = round((count / total_claims * 100), 4) if total_claims > 0 else 0.0
+            await self.save_result(query.name, count, percentage)
            
-            count = exec_result["data"]["count"]
-           
-            if total_claims > 0:
-                percentage = round((count / total_claims * 100), 4)
-            else:
-                percentage = 0.0
-           
-            await self._save_result(query.name, count, percentage, filters)
-           
-            results.append({
+            return {
                 "name": query.name,
                 "count": count,
                 "percentage": percentage
-            })
+            }
+   
+    async def run_validations(self, qtype=None, priority=None):
+        logger.info("Starting validations")
+        queries = await self.fetch_queries(qtype, priority)
+        total_claims = await self.count_total_claims()
+        semaphore = asyncio.Semaphore(self.max_concurrent)
+   
+        tasks = [
+            self.run_single_validation(query, total_claims, semaphore)
+            for query in queries
+        ]
        
-        logger.success(f"Completed {len(results)} validations")
-       
+        results = await asyncio.gather(*tasks)
         return results
  
